@@ -43,6 +43,22 @@ Return `{"parentId":null,"entries":[{"id":"dir_1","name":"src","kind":"directory
 
 Return `{"entries":[{"id":"err1","severity":"error","source":"watcher","message":"ETW queue overload (redacted)","timestamp":"2026-11-13T00:00:00Z","agentId":"codex"}],"nextCursor":null}`. Device needs diagnostics-read permission. Redact tokens, private paths, prompts, file contents and user data; cap page size at 200. Cursor must be authenticated to device and host/session scope, with a stable ordering and server-side expiry. Include watcher drop/reconnect, containment failure, broker/MXC and task coordinator errors. Never use raw log-file paths supplied by the phone.
 
+## Agent chat (native session-bound)
+
+GET `/mobile/v1/agents/:agentId/chat?after=<opaque-cursor>` returns `{"messages":[{"id":"m1","agentId":"codex","sender":"agent","text":"Completed review","timestamp":"2026-11-13T12:00:00Z"}],"nextCursor":null}`. POST `/mobile/v1/agent-chat` body: `{"agentId":"codex","message":"Check tests","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`. Native desktop must bind messages to an existing authorized chat/session, enforce agent ownership and workspace, redact secrets, and never treat phone-supplied instructions as an authorization override. Bound replies and bounded history, max 100 per page, 4,000 characters per outgoing message. Revalidate session revision/idempotency, audit every send. Do not permit commands to execute outside native agent containment.
+
+## Goal delegation
+
+POST `/mobile/v1/goals` body: `{"goal":"Complete Android UI","instructions":"Include tests","priority":"normal","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`. Native coordinator validates device/workspace/revision, creates an auditable goal, plans tasks and assigns agents only within their permitted scopes and security policies. No auto-grant privileges or raw code execution. Return goal ID and queued state only after it is committed.
+
+## Code review
+
+GET `/mobile/v1/reviews?after=<opaque-cursor>` returns `{"reviews":[{"id":"rev_1","agentId":"codex","title":"Update UI","summary":"Changed layout","status":"pending","revision":1,"files":[{"path":"src/App.tsx","additions":4,"deletions":2,"patch":"@@ ..."}]}],"nextCursor":null}`. Native must derive and redact the diff from an authorized revision/commit; return bounded/sanitized snippets only. Never allow untrusted file paths or raw requested patch application from mobile. POST `/mobile/v1/reviews/decision` body: `{"reviewId":"rev_1","decision":"approve_review","deviceId":"device-id","expectedRevision":1,"requestId":"unique-id"}` (also `request_changes`). Decision is a **review acknowledgment only**, not an MXC permission grant, merge, or file write. Native validates immutable review content hash, freshness, device authorization, and current revision before acknowledging.
+
+## Alerts & local notifications
+
+GET `/mobile/v1/alerts?after=<opaque-cursor>` returns `{"alerts":[{"id":"alert_1","severity":"critical","title":"Containment failure","message":"Operation blocked","timestamp":"2026-11-13T12:00:00Z","agentId":"codex"}],"nextCursor":null}`. Native must redact paths/secrets, enforce device visibility, issue stable monotonic cursors and bounded pages. Android has an in-app alert center; **background FCM push delivery is not implemented yet**. A later push service must forward only an opaque alert identifier with no user content and require secure fetch for details. Native desktop must not infer that an alert was delivered or read.
+
 ## Integration steps
 
 1. Implement an immutable redacted snapshot adapter in PhAize desktop.
