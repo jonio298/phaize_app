@@ -67,11 +67,15 @@ private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":
 "statistics":{"eventsToday":1,"blockedToday":0,"completedToday":0}}""")
 
 class MainActivity:ComponentActivity(){
+ // A phaize://pair link opened from the QR (camera app) arrives here, also while the app is already running.
+ private var incomingPairLink by mutableStateOf("")
+ override fun onNewIntent(intent:android.content.Intent){super.onNewIntent(intent);setIntent(intent);incomingPairLink=intent.dataString.orEmpty()}
  override fun onCreate(savedInstanceState:Bundle?){
   // Draw behind the status and navigation bars; the header and nav bar add their own insets so nothing is hidden.
   enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
   super.onCreate(savedInstanceState)
   val prefs=UiPrefs(applicationContext)
+  incomingPairLink=intent?.dataString.orEmpty()
   Pal.useTheme(prefs.theme)
   val systemReduced=AndroidSettings.Global.getFloat(contentResolver,AndroidSettings.Global.ANIMATOR_DURATION_SCALE,1f)==0f
   setContent {
@@ -80,7 +84,7 @@ class MainActivity:ComponentActivity(){
    val density=LocalDensity.current
    MaterialTheme(colorScheme=scheme){
     CompositionLocalProvider(LocalAnim provides (prefs.animations&&!systemReduced),LocalDensity provides Density(density.density,density.fontScale*prefs.textScale)){
-     Screen(SecureConnectionStore(applicationContext),prefs)
+     Screen(SecureConnectionStore(applicationContext),prefs,incomingPairLink)
     }
    }
   }
@@ -119,8 +123,8 @@ class MainActivity:ComponentActivity(){
  }
 }
 
-@Composable private fun Screen(store:SecureConnectionStore,prefs:UiPrefs){
- val api=remember{ApiClient()}
+@Composable private fun Screen(store:SecureConnectionStore,prefs:UiPrefs,incomingInvite:String){
+ val api=remember{ApiClient().also{it.lanFingerprint=store.loadLanPin()}}
  val scope=rememberCoroutineScope()
  val anim=LocalAnim.current
  val deviceId=remember{UUID.randomUUID().toString()}
@@ -130,7 +134,9 @@ class MainActivity:ComponentActivity(){
  var live by remember{mutableStateOf(false)}
  var connected by remember{mutableStateOf(false)}
  var snapshot by remember{mutableStateOf(demo())}
- var tab by remember{mutableStateOf(Tab.Home)}
+ var tab by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))Tab.Settings else Tab.Home)}
+ var pairingLink by remember(incomingInvite){mutableStateOf(incomingInvite)}
+ var chatsSupported by remember{mutableStateOf(true)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
  var chatList by remember{mutableStateOf(demoChats())}
@@ -140,28 +146,30 @@ class MainActivity:ComponentActivity(){
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
  suspend fun refresh(){
-  try{val new=api.snapshot(base,token);snapshot=new;connected=true;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
-  catch(e:Exception){live=false;connected=false;notice="Connection lost: "+(e.message?:"offline")}
+  try{val new=api.snapshot(base,token);snapshot=new;connected=true;live=new.mode=="live";if(!live)notice="Desktop did not confirm a live session" else notice=null}
+  catch(e:Exception){live=false;connected=false;snapshot=snapshot.copy(agents=emptyList(),tasks=emptyList(),files=emptyList(),timeline=emptyList(),approvals=emptyList());notice="Local connection unavailable: "+(e.message?:"offline")}
  }
  suspend fun refreshChats(){
-  try{chatList=api.chats(base,token)}catch(e:Exception){notice="Chats unavailable: "+(e.message?:"offline")}
+  try{chatList=api.chats(base,token);chatsSupported=true}
+  catch(e:Exception){val m=e.message?:"";if(m.startsWith("HTTP 404")||m.startsWith("HTTP 503"))chatsSupported=false else notice="Chats unavailable: "+m.ifBlank{"offline"}}
  }
  suspend fun refreshChat(id:String){
   chatLoading=true
   try{chatMessages=api.chat(base,token,id)}catch(e:Exception){notice="Chat unavailable: "+(e.message?:"offline")}finally{chatLoading=false}
  }
- LaunchedEffect(Unit){if(saved!=null){refresh()}}
- LaunchedEffect(live,base,token){
-  while(live){delay(8000);refresh()}
+ LaunchedEffect(Unit){if(saved!=null&&store.loadLanPin()!=null){refresh()}}
+ LaunchedEffect(base,token){
+  // Keep polling while a paired desktop is configured, so a dropped connection recovers by itself.
+  while(base.isNotBlank()&&token.isNotBlank()&&api.lanFingerprint!=null){delay(8000);refresh()}
  }
  LaunchedEffect(connected){if(!connected){chatList=demoChats()}}
  LaunchedEffect(connected,tab,openChat?.id){
   if(connected&&tab==Tab.Chats){
-   while(true){refreshChats();openChat?.let{refreshChat(it.id)};delay(8000)}
+   while(true){refreshChats();if(!chatsSupported)break;openChat?.let{refreshChat(it.id)};delay(8000)}
   }
  }
- val shownMessages=if(connected)chatMessages else (openChat?.let{demoMessages(it.id)}?:emptyList())
- val chatBanner=when{!connected->"Showing sample conversations. Connect a gateway in Settings to read your real chats.";!live->"Demo gateway: these conversations are samples.";else->null}
+ val shownMessages=if(connected&&chatsSupported)chatMessages else (openChat?.let{demoMessages(it.id)}?:emptyList())
+ val chatBanner=when{!connected->"Showing sample conversations. Pair with your PC in Settings first.";!chatsSupported->"This desktop does not share chats with the phone yet. Showing sample conversations.";!live->"Demo gateway: these conversations are samples.";else->null}
  val navItems=Tab.entries.map{NavItem(it.short,it.icon,if(it==Tab.Approvals&&live&&snapshot.approvalsAvailable)snapshot.approvals.size else 0)}
  Box(Modifier.fillMaxSize().phaizeBackground()){
   Scaffold(containerColor=Color.Transparent,topBar={AppHeader(tab,live,connected){scope.launch{if(connected)refresh()}}},
@@ -184,15 +192,29 @@ class MainActivity:ComponentActivity(){
       Tab.Home->Home(snapshot,{tab=it})
       Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
       Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
-      Tab.Chats->ChatsPage(chatBanner,chatList.chats,openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
+      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else demoChats().chats,openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
       Tab.Files->Files(snapshot)
       Tab.History->History(snapshot)
-      Tab.Settings->SettingsPage(prefs,base,token,live,busy,{base=it},{token=it},{
-        scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;connected=true;live=s.mode=="live"
-         if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
-         else notice="Demo gateway: real controls remain disabled"
-        }catch(e:Exception){live=false;connected=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-       },{store.clear();token="";base="";live=false;connected=false;snapshot=demo();openChat=null;notice="Connection removed"})
+      Tab.Settings->SettingsPage(prefs,pairingLink,{pairingLink=it},live,busy,{
+        scope.launch{
+         busy=true
+         try{
+          val invite=LanInvitation.parse(pairingLink)
+          val bearer=api.enroll(invite)
+          val state=api.snapshot(invite.base,bearer)
+          require(state.mode=="live"){"Desktop did not report live monitoring"}
+          store.save(invite.base,bearer,invite.fingerprint)
+          base=invite.base;token=bearer;snapshot=state;connected=true;live=true
+          notice="Paired over local Wi-Fi (read-only)";tab=Tab.Home
+          pairingLink=""
+         }catch(e:Exception){live=false;connected=false;notice="Pairing failed: "+(e.message?:"unknown")}
+         finally{busy=false}
+        }
+       },{
+        store.clear();api.lanFingerprint=null;token="";base="";live=false;connected=false
+        snapshot=demo();openChat=null
+        notice="Phone disconnected. Revoke it on the Windows desktop to invalidate its access."
+       })
      }
     }
    }

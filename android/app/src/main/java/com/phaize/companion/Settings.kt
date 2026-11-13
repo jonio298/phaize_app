@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVector){
- Connection("Connection","Gateway address and token",Icons.Outlined.Link),
+ Connection("Connection","Pair with your PC over Wi-Fi",Icons.Outlined.Link),
  Appearance("Appearance","Theme, motion and text size",Icons.Outlined.Palette),
  Privacy("Privacy","What is and is not stored",Icons.Outlined.Lock)
 }
@@ -127,15 +127,19 @@ enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVe
  Info("Animations also turn off when Android's own animation setting is off.")
 }
 
-@Composable private fun ConnectionDetail(base:String,token:String,live:Boolean,busy:Boolean,setBase:(String)->Unit,setToken:(String)->Unit,connect:()->Unit,disconnect:()->Unit){
- SectionHeader(Icons.Outlined.Link,"Trusted HTTPS desktop gateway","A private tunnel or authenticated proxy only")
+@Composable private fun PairingDetail(link:String,setLink:(String)->Unit,live:Boolean,busy:Boolean,pair:()->Unit,disconnect:()->Unit){
+ SectionHeader(Icons.Outlined.Link,"Pair directly with PhAize","Over your private Wi-Fi. No account, no cloud relay, no port forwarding.")
  Glass{
-  Info("Do not expose the desktop's localhost over public HTTP. The app refuses plain http addresses.")
-  OutlinedTextField(base,setBase,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("https://your-private-gateway")},colors=fieldColors())
-  OutlinedTextField(token,setToken,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Gateway token")},visualTransformation=PasswordVisualTransformation(),colors=fieldColors())
-  Button(onClick=connect,enabled=!busy&&base.startsWith("https://")&&token.isNotBlank()){Text("Connect securely")}
-  OutlinedButton(onClick=disconnect){Text("Disconnect / forget token")}
-  Info(if(live)"Live data enabled" else "Disconnected, or a demo gateway",if(live)Pal.green else Pal.muted)
+  Info("On Windows: Settings → Mobile & Local Network → Start server → Pair a new phone. Scan the QR with your camera (it opens this app) or paste the link below.")
+  OutlinedTextField(link,setLink,modifier=Modifier.fillMaxWidth(),label={Text("phaize://pair? …")},minLines=2,maxLines=4,colors=fieldColors())
+  Button(onClick=pair,enabled=!busy&&link.startsWith("phaize://pair?")){Text(if(busy)"Pairing…" else "Pair securely")}
+  Info("The QR pins the desktop's TLS certificate. A different device on the same Wi-Fi is rejected.")
+ }
+ Glass{
+  Text(if(live)"Connected to desktop" else "No active local connection",color=if(live)Pal.green else Pal.amber)
+  Info("Monitoring only. Approvals, agent stop and security changes stay disabled until independently verified.")
+  OutlinedButton(onClick=disconnect){Text("Forget local connection")}
+  Info("To cut access immediately, use Paired Phones on the Windows desktop.")
  }
 }
 
@@ -146,7 +150,7 @@ enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVe
 @Composable private fun PrivacyDetail(){
  SectionHeader(Icons.Outlined.Lock,"Privacy","What this app keeps, and what it does not")
  SettingGroup{
-  PrivacyRow("Gateway token","Encrypted with the Android Keystore. It is not shown again after you save it.","Encrypted")
+  PrivacyRow("Pairing credential","Encrypted with the Android Keystore, together with the desktop certificate fingerprint it is pinned to.","Encrypted")
   PrivacyRow("Chats, files and approvals","Held in memory while you read them. Nothing from them is saved on this phone.","Not stored")
   PrivacyRow("Android backups","Backups are turned off for this app.","Off")
   PrivacyRow("Remote decisions","A phone decision is only a request. The desktop checks it again before anything happens.","Re-checked",last=true)
@@ -170,7 +174,7 @@ enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVe
 }
 
 /** Settings: category cards first, then a detail page that slides in. Connection, appearance and privacy are the real settings of this app. */
-@Composable fun SettingsPage(prefs:UiPrefs,base:String,token:String,live:Boolean,busy:Boolean,setBase:(String)->Unit,setToken:(String)->Unit,connect:()->Unit,disconnect:()->Unit){
+@Composable fun SettingsPage(prefs:UiPrefs,link:String,setLink:(String)->Unit,live:Boolean,busy:Boolean,pair:()->Unit,disconnect:()->Unit){
  var section by remember{mutableStateOf<SettingsSection?>(null)}
  val on=LocalAnim.current
  BackHandler(enabled=section!=null){section=null}
@@ -189,7 +193,7 @@ enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVe
      Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
       when(s){
        SettingsSection.Appearance->AppearanceDetail(prefs)
-       SettingsSection.Connection->ConnectionDetail(base,token,live,busy,setBase,setToken,connect,disconnect)
+       SettingsSection.Connection->PairingDetail(link,setLink,live,busy,pair,disconnect)
        SettingsSection.Privacy->PrivacyDetail()
       }
      }
