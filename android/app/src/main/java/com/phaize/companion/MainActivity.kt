@@ -58,13 +58,8 @@ private enum class Tab(val title:String,val subtitle:String,val short:String,val
  History("History","Timeline and changelog","History",Icons.Outlined.History),
  Settings("Settings","How the app looks and connects","Settings",Icons.Outlined.Settings)
 }
-private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":{"name":"PhAize Sample","online":false,"monitoring":"demo","containment":"demo","cpu":0,"memoryPercent":0},
-"agents":[{"id":"codex","name":"Codex","status":"working","role":"Implementer","task":"Android gateway integration","cpu":9,"memoryMb":1700},{"id":"claude","name":"Claude Code","status":"reviewing","role":"Reviewer","task":"Security review","cpu":5,"memoryMb":1900}],
-"tasks":[{"id":"T-01","title":"Mobile UI and state","agentId":"codex","status":"in_progress","progress":70}],
-"approvals":[{"id":"demo-1","revision":1,"agentId":"codex","type":"file_write","title":"Change scheduler","detail":"Example write request","resource":"C:/Projects/PhAize/src/chat/scheduler.ts","risk":"high","expiresAt":"2099-01-01"}],
-"files":[{"id":"f1","path":"src/chat/scheduler.ts","action":"modified","agentId":"codex","timestamp":"sample","risk":"medium"}],
-"timeline":[{"id":"t1","type":"task","title":"Sample task in progress","detail":"Connect a trusted live desktop gateway for real information","timestamp":"sample","agentId":"codex"}],
-"statistics":{"eventsToday":1,"blockedToday":0,"completedToday":0}}""")
+/** Nothing is shown as live until a paired desktop answers: no sample agents, files, approvals or events. */
+private fun emptySnapshot():Snapshot=Snapshot(0,"offline",Host("Not paired",false,"unknown","unknown",0,0),emptyList(),emptyList(),emptyList(),emptyList(),emptyList(),0,0,0,false,false,false,0)
 
 class MainActivity:ComponentActivity(){
  // A phaize://pair link opened from the QR (camera app) arrives here, also while the app is already running.
@@ -95,7 +90,7 @@ class MainActivity:ComponentActivity(){
  val shape=RoundedCornerShape(12.dp)
  Row(Modifier.clip(shape).background(Pal.panel).border(1.dp,Pal.border,shape).padding(horizontal=10.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
   LiveDot(live)
-  Text(if(live)"LIVE" else if(connected)"DEMO" else "OFFLINE",color=if(live)Pal.green else Pal.amber,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)
+  Text(if(live)"LIVE" else if(connected)"NOT LIVE" else "OFFLINE",color=if(live)Pal.green else Pal.amber,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)
  }
 }
 
@@ -133,13 +128,13 @@ class MainActivity:ComponentActivity(){
  var token by remember{mutableStateOf(saved?.second?:"")}
  var live by remember{mutableStateOf(false)}
  var connected by remember{mutableStateOf(false)}
- var snapshot by remember{mutableStateOf(demo())}
+ var snapshot by remember{mutableStateOf(emptySnapshot())}
  var tab by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))Tab.Settings else Tab.Home)}
  var pairingLink by remember(incomingInvite){mutableStateOf(incomingInvite)}
  var chatsSupported by remember{mutableStateOf(true)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
- var chatList by remember{mutableStateOf(demoChats())}
+ var chatList by remember{mutableStateOf(ChatList(false,emptyList()))}
  var openChat by remember{mutableStateOf<ChatSummary?>(null)}
  var chatMessages by remember{mutableStateOf<List<ChatMessage>>(emptyList())}
  var chatLoading by remember{mutableStateOf(false)}
@@ -162,14 +157,14 @@ class MainActivity:ComponentActivity(){
   // Keep polling while a paired desktop is configured, so a dropped connection recovers by itself.
   while(base.isNotBlank()&&token.isNotBlank()&&api.lanFingerprint!=null){delay(8000);refresh()}
  }
- LaunchedEffect(connected){if(!connected){chatList=demoChats()}}
+ LaunchedEffect(connected){if(!connected){chatList=ChatList(false,emptyList());chatMessages=emptyList();openChat=null}}
  LaunchedEffect(connected,tab,openChat?.id){
   if(connected&&tab==Tab.Chats){
    while(true){refreshChats();if(!chatsSupported)break;openChat?.let{refreshChat(it.id)};delay(8000)}
   }
  }
- val shownMessages=if(connected&&chatsSupported)chatMessages else (openChat?.let{demoMessages(it.id)}?:emptyList())
- val chatBanner=when{!connected->"Showing sample conversations. Pair with your PC in Settings first.";!chatsSupported->"This desktop does not share chats with the phone yet. Showing sample conversations.";!live->"Demo gateway: these conversations are samples.";else->null}
+ val shownMessages=if(connected&&chatsSupported)chatMessages else emptyList()
+ val chatBanner=when{!connected->"Not connected. Pair with your PC in Settings to read chats.";!chatsSupported->"This desktop does not share chats with the phone yet.";else->null}
  val navItems=Tab.entries.map{NavItem(it.short,it.icon,if(it==Tab.Approvals&&live&&snapshot.approvalsAvailable)snapshot.approvals.size else 0)}
  Box(Modifier.fillMaxSize().phaizeBackground()){
   Scaffold(containerColor=Color.Transparent,topBar={AppHeader(tab,live,connected){scope.launch{if(connected)refresh()}}},
@@ -192,7 +187,7 @@ class MainActivity:ComponentActivity(){
       Tab.Home->Home(snapshot,{tab=it})
       Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
       Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
-      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else demoChats().chats,openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
+      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
       Tab.Files->Files(snapshot)
       Tab.History->History(snapshot)
       Tab.Settings->SettingsPage(prefs,pairingLink,{pairingLink=it},live,busy,{
@@ -212,7 +207,7 @@ class MainActivity:ComponentActivity(){
         }
        },{
         store.clear();api.lanFingerprint=null;token="";base="";live=false;connected=false
-        snapshot=demo();openChat=null
+        snapshot=emptySnapshot();openChat=null
         notice="Phone disconnected. Revoke it on the Windows desktop to invalidate its access."
        })
      }
@@ -265,7 +260,8 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage{
- item{Glass(Modifier.enter(0)){Text(s.host.name,color=Pal.text,fontWeight=FontWeight.Bold);Info("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");Info(if(s.mode=="live")"Resource metrics not yet connected" else "Demo metrics only")}}
+ if(s.mode!="live")item{Glass(Modifier.enter(0)){Text("Not paired yet",color=Pal.text,fontWeight=FontWeight.Bold);Info("Pair this phone with your PC over Wi-Fi to see your agents, files and activity.");Button(onClick={go(Tab.Settings)}){Text("Pair with your PC")}}}
+ item{Glass(Modifier.enter(0)){Text(s.host.name,color=Pal.text,fontWeight=FontWeight.Bold);Info("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");Info(if(s.mode=="live")"Resource metrics not yet connected" else "Pair this phone with your PC to see live data.")}}
  item{Row(Modifier.enter(1),horizontalArrangement=Arrangement.spacedBy(10.dp)){
   StatCard(Modifier.weight(1f),s.agents.count{it.status!="idle"},"Active agents",Pal.accent)
   StatCard(Modifier.weight(1f),if(s.approvalsAvailable)s.approvals.size else null,"Approvals",Pal.amber)
@@ -279,7 +275,7 @@ class MainActivity:ComponentActivity(){
    LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth(),color=Pal.accent,trackColor=Pal.accent.copy(alpha=.15f))
   }
  }
- item{Info(if(s.mode=="live")"Recent recorded event sample: ${s.sampledEvents} (not full history)" else "Demo events: ${s.eventsToday}")}
+ item{if(s.mode=="live")Info("Recent recorded event sample: ${s.sampledEvents} (not full history)")}
 }
 @Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
  var q by remember{mutableStateOf("")}

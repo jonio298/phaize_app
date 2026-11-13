@@ -54,7 +54,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val timeFormat=DateTimeFormatter.ofPattern("MMM d, HH:mm")
-/** Shows an ISO timestamp in the phone's time zone; anything else (such as "sample") is shown as it came. */
+/** Shows an ISO timestamp in the phone's time zone; anything else is shown as it came. */
 fun shortTime(ts:String):String=try{timeFormat.format(Instant.parse(ts).atZone(ZoneId.systemDefault()))}catch(_:Exception){ts}
 
 /** Splits a message into plain text and fenced code, in order. */
@@ -164,24 +164,8 @@ private fun agentColour(agentId:String):Color=when(agentId){"codex"->Color(0xFF7
   if(current!=null)Conversation(current,messages,loading,onBack)
   else LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
    if(banner!=null)item{Glass(Modifier.enter(0)){Text(banner,color=Pal.amber,style=MaterialTheme.typography.bodySmall)}}
-   if(chats.isEmpty())item{Info("No conversations yet.")}
+   if(chats.isEmpty())item{Info("No conversations to show.")}
    itemsIndexed(chats,key={_,c->c.id}){i,c->ChatRow(i+1,c){onOpen(c)}}
   }
  }
-}
-
-/** Sample conversations so the tab is useful before a gateway is connected. Never mixed with live data. */
-fun demoChats():ChatList=ChatList(false,listOf(
- ChatSummary("chat-codex","Android gateway integration","codex","Understood. Chats are read only and approvals stay on their own screen.","sample",4),
- ChatSummary("chat-claude","Security review of the bridge","claude","Peer approved, not verified. Native checks are still pending.","sample",3)))
-fun demoMessages(id:String):List<ChatMessage> = when(id){
- "chat-codex"->listOf(
-  ChatMessage("1","user","You","Add chat viewing to the mobile app. Read only for now.","sample"),
-  ChatMessage("2","agent","Codex","On it. I will add two read-only routes to the gateway, then this screen.","sample"),
-  ChatMessage("3","agent","Codex","Routes:\n```\nGET /v1/chats\nGET /v1/chats/:id\n```\nNext is the Android screen.","sample"),
-  ChatMessage("4","system","PhAize","Task T-01 assigned to Codex. This grants no permissions.","sample"))
- else->listOf(
-  ChatMessage("1","agent","Claude Code","Reviewing the bridge contract against the gateway.","sample"),
-  ChatMessage("2","agent","Claude Code","A phone decision must be re-checked by the desktop for revision and expiry. Confirmed.","sample"),
-  ChatMessage("3","system","PhAize","Peer approved, not verified. Native checks are still pending.","sample"))
 }
