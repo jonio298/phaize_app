@@ -42,6 +42,28 @@ class ApiClient {
   val path="/v1/errors"+(if(after==null) "" else "?after="+java.net.URLEncoder.encode(after,"UTF-8"))
   return parseErrorPage(call(base,token,path))
  }
+ suspend fun chat(base:String,token:String,agentId:String):ChatPage =
+  parseChatPage(call(base,token,"/v1/agents/"+agentId+"/chat"))
+ suspend fun reviews(base:String,token:String):ReviewPage =
+  parseReviewPage(call(base,token,"/v1/reviews"))
+ suspend fun alerts(base:String,token:String):AlertPage =
+  parseAlertPage(call(base,token,"/v1/alerts"))
+ suspend fun sendChat(base:String,token:String,agentId:String,message:String,revision:Int,deviceId:String):String {
+  require(message.isNotBlank()&&message.length<=4000)
+  val p=JSONObject().put("message",message.trim()).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/agents/"+agentId+"/chat","POST",p)
+ }
+ suspend fun createGoal(base:String,token:String,goal:String,instructions:String,priority:String,revision:Int,deviceId:String):String {
+  require(goal.trim().length in 3..240&&instructions.length<=4000&&priority in listOf("low","normal","high"))
+  val p=JSONObject().put("goal",goal.trim()).put("instructions",instructions).put("priority",priority)
+   .put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/goals","POST",p)
+ }
+ suspend fun reviewDecision(base:String,token:String,reviewId:String,decision:String,revision:Int,deviceId:String):String {
+  require(decision in listOf("approve_review","request_changes"))
+  val p=JSONObject().put("decision",decision).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/reviews/"+reviewId+"/decision","POST",p)
+ }
  suspend fun permissions(base:String,token:String,a:Agent,read:String,write:String,delete:String,revision:Int,deviceId:String):String {
   require(read in listOf("allow","ask","deny") && write in listOf("ask","deny") && delete in listOf("ask","deny"))
   val p=JSONObject().put("read",read).put("write",write).put("delete",delete).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
