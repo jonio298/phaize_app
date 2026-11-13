@@ -19,7 +19,8 @@ async function parseBody(req){
 const exact=(x,fields)=>Object.keys(x).sort().join('|')===fields.sort().join('|');
 const revision=n=>Number.isSafeInteger(n)&&n>=0;
 function validDecision(d){return exact(d,['decision','deviceId','expectedRevision','requestId'])&&['approve_once','deny'].includes(d.decision)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
-function validControl(d){return exact(d,['action','deviceId','expectedRevision','requestId'])&&['pause','resume','emergency_stop'].includes(d.action)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
+function validControl(d){return exact(d,['action','deviceId','expectedRevision','requestId'])&&['start','pause','resume','emergency_stop'].includes(d.action)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
+function validPolicy(d){return exact(d,['deviceId','expectedRevision','requestId','read','write','delete'])&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision)&&['allow','ask','deny'].includes(d.read)&&['ask','deny'].includes(d.write)&&['ask','deny'].includes(d.delete);}
 function resultStatus(outcome){return {ok:200,not_found:404,expired:410,conflict:409,forbidden:403,unavailable:503}[outcome?.status]??503;}
 export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
  if(!adapter||typeof adapter.snapshot!=='function'||typeof adapter.decide!=='function')throw Error('desktop adapter required');
@@ -42,21 +43,23 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
    }
    const approval=url.pathname.match(/^\/v1\/approvals\/([a-zA-Z0-9_-]{1,80})\/decisions$/);
    const agent=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/control$/);
-   if(req.method==='POST'&&(approval||agent)){
+   const policy=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/permissions$/);
+   if(req.method==='POST'&&(approval||agent||policy)){
      if(req.headers['content-type']?.split(';')[0].trim()!=='application/json')return json(res,415,{error:'json_required'});
      const body=await parseBody(req);
-     if(!(approval?validDecision(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
-     if(agent&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(!(approval?validDecision(body):policy?validPolicy(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
+     if((agent||policy)&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(policy&&typeof adapter.permissions!=='function')return json(res,503,{error:'native_permissions_unavailable'});
      if(agent&&typeof adapter.control!=='function')return json(res,503,{error:'native_control_unavailable'});
-     const target=(approval??agent)[1];
-     const scope=approval?'approval':'agent';
+     const target=(approval??agent??policy)[1];
+     const scope=approval?'approval':policy?'policy':'agent';
      const fingerprint=createHash('sha256').update(JSON.stringify({scope,target,body})).digest('hex');
      const id=body.deviceId+':'+body.requestId;
      const prior=idempotent.get(id);
      if(prior){if(prior.fingerprint!==fingerprint)return json(res,409,{error:'idempotency_key_reused'});return json(res,prior.status,prior.payload);}
      const command={...body,...(approval?{approvalId:target}:{agentId:target})};
      // Native service must recheck authorization, revision, device, policy, scope and TTL.
-     const outcome=await (approval?adapter.decide(command):adapter.control(command));
+     const outcome=await (approval?adapter.decide(command):policy?adapter.permissions(command):adapter.control(command));
      const status=resultStatus(outcome);
      const payload=status===200?(outcome.result??{ok:true}):{error:outcome?.status??'unavailable'};
      if(status!==503){idempotent.set(id,{fingerprint,status,payload});if(idempotent.size>5000)idempotent.delete(idempotent.keys().next().value);}
