@@ -31,7 +31,7 @@ private val amber=Color(0xFFF1BD72)
 private val red=Color(0xFFEA8B8B)
 private val green=Color(0xFF82DAAE)
 private val scheme=darkColorScheme(primary=accent,background=bg,surface=panel,onSurface=Color(0xFFEAF5F7),onBackground=Color.White)
-private enum class Tab(val text:String){Home("Home"),Agents("Agents"),Approvals("Approve"),Files("Files"),History("History"),Settings("Settings")}
+private enum class Tab(val text:String){Home("Home"),Agents("Agents"),Tasks("Tasks"),Approvals("Approve"),Files("Files"),Logs("Logs"),Settings("Settings")}
 private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":{"name":"PhAize Sample","online":false,"monitoring":"demo","containment":"demo","cpu":0,"memoryPercent":0},
 "agents":[{"id":"codex","name":"Codex","status":"working","role":"Implementer","task":"Android gateway integration","cpu":9,"memoryMb":1700},{"id":"claude","name":"Claude Code","status":"reviewing","role":"Reviewer","task":"Security review","cpu":5,"memoryMb":1900}],
 "tasks":[{"id":"T-01","title":"Mobile UI and state","agentId":"codex","status":"in_progress","progress":70}],
@@ -68,6 +68,10 @@ class MainActivity:ComponentActivity(){
  var tab by remember{mutableStateOf(Tab.Home)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
+ var browserPage by remember{mutableStateOf<BrowserPage?>(null)}
+ var errorsPage by remember{mutableStateOf<ErrorPage?>(null)}
+ var fileStack by remember{mutableStateOf(listOf<String>())}
+ var loadingExtra by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
  var policyPending by remember{mutableStateOf<Agent?>(null)}
@@ -76,6 +80,10 @@ class MainActivity:ComponentActivity(){
   catch(e:Exception){live=false;notice="Connection lost: "+(e.message?:"offline")}
  }
  LaunchedEffect(Unit){if(saved!=null){refresh()}}
+ LaunchedEffect(tab,live,base){
+  if(live && tab==Tab.Files){loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){browserPage=null;notice="File browser: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+  if(live && tab==Tab.Logs){loadingExtra=true;try{errorsPage=api.errors(base,token)}catch(e:Exception){errorsPage=null;notice="Error log: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+ }
  LaunchedEffect(live,base,token){
   while(live){delay(8000);refresh()}
  }
@@ -83,12 +91,15 @@ class MainActivity:ComponentActivity(){
   Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
    Column{Text("PhAize",fontWeight=FontWeight.ExtraBold,style=MaterialTheme.typography.headlineSmall,color=accent)
      Text(if(live)"LIVE • Desktop connected" else "DEMO / OFFLINE",color=if(live)green else amber,style=MaterialTheme.typography.labelSmall)}
-   IconButton(onClick={scope.launch{if(live)refresh()}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+   Row{
+    IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Logs)try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Files)try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+    IconButton(onClick={tab=Tab.Settings}){Icon(Icons.Outlined.Settings,"Connection settings",tint=accent)}
+   }
   }
  },bottomBar={
   NavigationBar(containerColor=panel){
-   Tab.entries.forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={
-    val icon=when(t){Tab.Home->Icons.Outlined.Dashboard;Tab.Agents->Icons.Outlined.SmartToy;Tab.Approvals->Icons.Outlined.VerifiedUser;Tab.Files->Icons.Outlined.FolderOpen;Tab.History->Icons.Outlined.History;Tab.Settings->Icons.Outlined.Settings}
+   listOf(Tab.Home,Tab.Agents,Tab.Tasks,Tab.Approvals,Tab.Files,Tab.Logs).forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={
+    val icon=when(t){Tab.Home->Icons.Outlined.Dashboard;Tab.Agents->Icons.Outlined.SmartToy;Tab.Tasks->Icons.Outlined.Assignment;Tab.Approvals->Icons.Outlined.VerifiedUser;Tab.Files->Icons.Outlined.FolderOpen;Tab.Logs->Icons.Outlined.BugReport;Tab.Settings->Icons.Outlined.Settings}
     Icon(icon,t.text)
    },label={Text(t.text,style=MaterialTheme.typography.labelSmall)})}
   }
@@ -98,15 +109,16 @@ class MainActivity:ComponentActivity(){
    when(tab){
     Tab.Home->Home(snapshot,{tab=it})
     Tab.Agents->Agents(snapshot,live,{a,action->agentPending=a to action},{a->policyPending=a})
+    Tab.Tasks->TasksScreen(snapshot,live){title,description,agent,priority->scope.launch{busy=true;try{api.createTask(base,token,title,description,agent,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted new task"}catch(e:Exception){notice="Task failed: "+(e.message?:"unavailable")}finally{busy=false}}}
     Tab.Approvals->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
-    Tab.Files->Files(snapshot)
-    Tab.History->History(snapshot)
+    Tab.Files->FileCenterScreen(snapshot,live,browserPage,fileStack,loadingExtra,{id->fileStack=fileStack+id;scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,id)}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}},{fileStack=fileStack.dropLast(1);scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}})
+    Tab.Logs->LogCenterScreen(snapshot,live,errorsPage,loadingExtra)
     Tab.Settings->Settings(base,token,live,{base=it},{token=it},{
       scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;live=s.mode=="live"
        if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
        else notice="Demo gateway: real controls remain disabled"
       }catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-     },{store.clear();token="";base="";live=false;snapshot=demo();notice="Connection removed"},busy)
+     },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;fileStack=emptyList();notice="Connection removed"},busy)
    }
   }
  }
