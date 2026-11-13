@@ -29,12 +29,12 @@ class SecureConnectionStore(ctx:Context) {
   prefs.edit().putString("base",base).putString("iv",Base64.encodeToString(cipher.iv,Base64.NO_WRAP))
    .putString("ciphertext",Base64.encodeToString(encrypted,Base64.NO_WRAP)).apply()
  }
- fun load():Pair<String,String>? = try {
+ fun load():Pair<String,String>? { return try {
   val base=prefs.getString("base",null)?:return null
   val iv=Base64.decode(prefs.getString("iv",null),Base64.NO_WRAP)
   val ciphertext=Base64.decode(prefs.getString("ciphertext",null),Base64.NO_WRAP)
   val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,iv))
   base to String(cipher.doFinal(ciphertext),Charsets.UTF_8)
- }catch(_:Exception){null}
+ }catch(_:Exception){null} }
  fun clear(){prefs.edit().clear().apply()}
 }
