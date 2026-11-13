@@ -18,6 +18,7 @@ export function createDesktopAdapter({bridgeUrl,bridgeToken,fetchImpl=fetch}={})
   return {
     async snapshot(){try{const state=await invoke('/mobile/v1/snapshot');return {...state,mode:'live'};}catch{throw Error('Desktop not available; remote state cannot be trusted');}},
     async decide(request){try{return await invoke('/mobile/v1/approvals/decisions','POST',request);}catch{return FAIL;}},
-    async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}}
+    async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}},
+    async permissions(request){try{return await invoke('/mobile/v1/agent-permissions','POST',request);}catch{return FAIL;}}
   };
 }
