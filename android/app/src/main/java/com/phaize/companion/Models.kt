@@ -9,7 +9,7 @@ data class Approval(val id:String,val revision:Int,val agentId:String,val title:
 data class FileEvent(val id:String,val path:String,val action:String,val agentId:String,val timestamp:String,val risk:String)
 data class Activity(val id:String,val type:String,val title:String,val detail:String,val timestamp:String,val agentId:String?)
 data class Host(val name:String,val online:Boolean,val monitoring:String,val containment:String,val cpu:Int,val memoryPercent:Int)
-data class Snapshot(val revision:Int,val mode:String,val host:Host,val agents:List<Agent>,val tasks:List<WorkTask>,val approvals:List<Approval>,val files:List<FileEvent>,val timeline:List<Activity>,val eventsToday:Int,val blockedToday:Int,val completedToday:Int)
+data class Snapshot(val revision:Int,val mode:String,val host:Host,val agents:List<Agent>,val tasks:List<WorkTask>,val approvals:List<Approval>,val files:List<FileEvent>,val timeline:List<Activity>,val eventsToday:Int,val blockedToday:Int,val completedToday:Int,val approvalsAvailable:Boolean,val controlsAvailable:Boolean,val tasksAvailable:Boolean)
 private fun <T> JSONObject.items(name:String,make:(JSONObject)->T):List<T>{val a=optJSONArray(name)?:JSONArray();return (0 until a.length()).mapNotNull{a.optJSONObject(it)?.let(make)}}
 private fun JSONObject.s(k:String)=optString(k,"")
 private fun JSONObject.n(k:String)=if(isNull(k))null else optString(k).takeIf{it.isNotEmpty()}
@@ -21,5 +21,5 @@ fun parseSnapshot(text:String):Snapshot {
  o.items("approvals"){Approval(it.s("id"),it.optInt("revision"),it.s("agentId"),it.s("title"),it.s("detail"),it.s("resource"),it.s("type"),it.s("risk"),it.s("expiresAt"))},
  o.items("files"){FileEvent(it.s("id"),it.s("path"),it.s("action"),it.s("agentId"),it.s("timestamp"),it.s("risk"))},
  o.items("timeline"){Activity(it.s("id"),it.s("type"),it.s("title"),it.s("detail"),it.s("timestamp"),it.n("agentId"))},
- stats.optInt("eventsToday"),stats.optInt("blockedToday"),stats.optInt("completedToday"))
+ stats.optInt("eventsToday"),stats.optInt("blockedToday"),stats.optInt("completedToday"),o.optString("approvalsAvailability","not_connected")=="connected",o.optString("controlsAvailability","not_connected")=="connected",o.optString("tasksAvailability","not_connected")=="connected")
 }
