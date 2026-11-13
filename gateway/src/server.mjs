@@ -1,0 +1,10 @@
+import {createGateway} from './gateway.mjs';
+import {createDemoAdapter} from './demo-adapter.mjs';
+import {createDesktopAdapter} from './desktop-adapter.mjs';
+const host=process.env.PHAIZE_HOST??'127.0.0.1';
+const port=Number(process.env.PHAIZE_PORT??8787);
+if(!['127.0.0.1','::1'].includes(host)) throw Error('Refusing public binding. Use loopback and a trusted HTTPS tunnel/proxy.');
+const token=process.env.PHAIZE_MOBILE_TOKEN??'';
+const demo=process.env.PHAIZE_DEMO==='1';
+const adapter=demo?createDemoAdapter():createDesktopAdapter({bridgeUrl:process.env.PHAIZE_DESKTOP_BRIDGE_URL,bridgeToken:process.env.PHAIZE_DESKTOP_BRIDGE_TOKEN});
+createGateway({adapter,token,allowControl:!demo}).listen(port,host,()=>console.log('PhAize '+(demo?'DEMO':'desktop-backed')+' mobile gateway on '+host+':'+port));
