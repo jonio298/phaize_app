@@ -29,6 +29,20 @@ Body: `{"agentId":"codex","read":"allow","write":"ask","delete":"ask","deviceId"
 
 Only `read=allow|ask|deny`, `write=ask|deny` and `delete=ask|deny` are accepted by the gateway. Mobile cannot enable unrestricted writes/deletes. These values are requests, not effective permissions. The native desktop must authorize the device to manage this agent's policy, validate a live revision and workspace, compare against organizational/admin floors, update the enforcement policy atomically, apply any required MXC/lease reconfiguration and persist audit + idempotency **before** reporting success. If enforcement update fails, retain the old stricter effective policy and return `unavailable` or `forbidden`. Return effective policy in a subsequent snapshot as `agents[].permissions = {"read":"allow","write":"ask","delete":"ask"}`. The mobile UI must not imply success from a request accepted only by the HTTP gateway.
 
+## POST /mobile/v1/tasks
+
+Body: `{"title":"Fix gateway test","description":"Investigate and report","agentId":"codex","priority":"normal","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`.
+
+`agentId` may be null for auto-delegation. The native desktop must authenticate the device, check task-creation permission, validate every task field and rate limit, verify workspace and current session revision, and enqueue via the existing task orchestration coordinator. **Never execute a raw mobile task as shell commands**. No automatic privilege escalation. Commit an audit record and stable result before replying. The gateway rejects unknown fields, instructions over 4000 characters and priorities outside low/normal/high. The phone may send task descriptions as user content; they are not authorization.
+
+## GET /mobile/v1/files/browse?parent=<opaque-id>
+
+Return `{"parentId":null,"entries":[{"id":"dir_1","name":"src","kind":"directory","sizeBytes":0,"modifiedAt":"2026-11-13T00:00:00Z","risk":"low"}],"truncated":false}`. Parent IDs are **opaque desktop-generated identifiers**, not paths. Validate device read capability, resolve each ID to a canonical path strictly within the selected allowed workspace (including links/junctions), revalidate on each navigation, and redact sensitive names/metadata. Return at most 200 entries, no file contents, no direct filesystem write/delete APIs. Keep UI read-only. The root is selected by desktop scope; the phone cannot supply a root path.
+
+## GET /mobile/v1/errors?after=<opaque-cursor>
+
+Return `{"entries":[{"id":"err1","severity":"error","source":"watcher","message":"ETW queue overload (redacted)","timestamp":"2026-11-13T00:00:00Z","agentId":"codex"}],"nextCursor":null}`. Device needs diagnostics-read permission. Redact tokens, private paths, prompts, file contents and user data; cap page size at 200. Cursor must be authenticated to device and host/session scope, with a stable ordering and server-side expiry. Include watcher drop/reconnect, containment failure, broker/MXC and task coordinator errors. Never use raw log-file paths supplied by the phone.
+
 ## Integration steps
 
 1. Implement an immutable redacted snapshot adapter in PhAize desktop.
