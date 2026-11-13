@@ -64,6 +64,15 @@ class ApiClient {
   val p=JSONObject().put("decision",decision).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/reviews/"+reviewId+"/decision","POST",p)
  }
+ suspend fun operations(base:String,token:String):OpsPage=parseOpsPage(call(base,token,"/v1/ops"))
+ suspend fun opsAction(base:String,token:String,action:String,params:JSONObject,revision:Int,deviceId:String):String {
+  require(action in listOf("lockdown","limits","terminal_preset","checkpoint_restore","capture"))
+  val p=JSONObject().put("action",action).put("deviceId",deviceId)
+   .put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  val keys=params.keys()
+  while(keys.hasNext()){val key=keys.next();require(key !in listOf("action","deviceId","expectedRevision","requestId"));p.put(key,params.get(key))}
+  return call(base,token,"/v1/ops/action","POST",p)
+ }
  suspend fun permissions(base:String,token:String,a:Agent,read:String,write:String,delete:String,revision:Int,deviceId:String):String {
   require(read in listOf("allow","ask","deny") && write in listOf("ask","deny") && delete in listOf("ask","deny"))
   val p=JSONObject().put("read",read).put("write",write).put("delete",delete).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
