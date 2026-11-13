@@ -124,7 +124,7 @@ class MainActivity:ComponentActivity(){
    dismissButton={TextButton(onClick={agentPending=null}){Text("Cancel")}})
  }
 }
-@Composable private fun ListPage(title:String,content:@Composable androidx.compose.foundation.lazy.LazyListScope.()->Unit){
+@Composable private fun ListPage(title:String,content:androidx.compose.foundation.lazy.LazyListScope.()->Unit){
  LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(14.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
   item{Title(title)};content()
  }
