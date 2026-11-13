@@ -23,3 +23,16 @@ fun parseSnapshot(text:String):Snapshot {
  o.items("timeline"){Activity(it.s("id"),it.s("type"),it.s("title"),it.s("detail"),it.s("timestamp"),it.n("agentId"))},
  stats.optInt("eventsToday"),stats.optInt("blockedToday"),stats.optInt("completedToday"),o.optString("approvalsAvailability","not_connected")=="connected",o.optString("controlsAvailability","not_connected")=="connected",o.optString("tasksAvailability","not_connected")=="connected",stats.optInt("sampledEvents"))
 }
+
+data class ChatSummary(val id:String,val title:String,val agentId:String,val preview:String,val updatedAt:String,val messageCount:Int)
+data class ChatMessage(val id:String,val role:String,val speaker:String,val text:String,val timestamp:String)
+data class ChatList(val available:Boolean,val chats:List<ChatSummary>)
+fun parseChatList(text:String):ChatList {
+ val o=JSONObject(text)
+ return ChatList(o.optString("availability","not_connected")=="connected",
+  o.items("chats"){ChatSummary(it.s("id"),it.s("title"),it.s("agentId"),it.s("preview"),it.s("updatedAt"),it.optInt("messageCount"))})
+}
+fun parseChatMessages(text:String):List<ChatMessage> {
+ val o=JSONObject(text)
+ return o.items("messages"){ChatMessage(it.s("id"),it.s("role"),it.s("speaker"),it.s("text"),it.s("timestamp"))}
+}

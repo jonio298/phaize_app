@@ -1,12 +1,33 @@
 package com.phaize.companion
 
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.*
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -14,24 +35,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private val bg=Color(0xFF08141B)
-private val panel=Color(0xFF132732)
-private val accent=Color(0xFF69C9D6)
-private val muted=Color(0xFF97B0BB)
-private val amber=Color(0xFFF1BD72)
-private val red=Color(0xFFEA8B8B)
-private val green=Color(0xFF82DAAE)
-private val scheme=darkColorScheme(primary=accent,background=bg,surface=panel,onSurface=Color(0xFFEAF5F7),onBackground=Color.White)
-private enum class Tab(val text:String){Home("Home"),Agents("Agents"),Approvals("Approve"),Files("Files"),History("History"),Settings("Settings")}
+private enum class Tab(val title:String,val subtitle:String,val short:String,val icon:ImageVector){
+ Home("Overview","What your agents are doing","Home",Icons.Outlined.Dashboard),
+ Agents("Agents","Who is working, and on what","Agents",Icons.Outlined.SmartToy),
+ Approvals("Approvals","Permission requests waiting for you","Approve",Icons.Outlined.VerifiedUser),
+ Chats("Chats","Read agent conversations","Chats",Icons.Outlined.ChatBubbleOutline),
+ Files("Files","Recent file activity","Files",Icons.Outlined.FolderOpen),
+ History("History","Timeline and changelog","History",Icons.Outlined.History),
+ Settings("Settings","How the app looks and connects","Settings",Icons.Outlined.Settings)
+}
 private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":{"name":"PhAize Sample","online":false,"monitoring":"demo","containment":"demo","cpu":0,"memoryPercent":0},
 "agents":[{"id":"codex","name":"Codex","status":"working","role":"Implementer","task":"Android gateway integration","cpu":9,"memoryMb":1700},{"id":"claude","name":"Claude Code","status":"reviewing","role":"Reviewer","task":"Security review","cpu":5,"memoryMb":1900}],
 "tasks":[{"id":"T-01","title":"Mobile UI and state","agentId":"codex","status":"in_progress","progress":70}],
@@ -39,130 +65,215 @@ private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":
 "files":[{"id":"f1","path":"src/chat/scheduler.ts","action":"modified","agentId":"codex","timestamp":"sample","risk":"medium"}],
 "timeline":[{"id":"t1","type":"task","title":"Sample task in progress","detail":"Connect a trusted live desktop gateway for real information","timestamp":"sample","agentId":"codex"}],
 "statistics":{"eventsToday":1,"blockedToday":0,"completedToday":0}}""")
+
 class MainActivity:ComponentActivity(){
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent {
-  MaterialTheme(colorScheme=scheme){Screen(SecureConnectionStore(applicationContext))}
- }}
-}
-@Composable private fun Card(content:@Composable ColumnScope.()->Unit){
- Surface(color=panel,shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth()){
-  Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp),content=content)
+ override fun onCreate(savedInstanceState:Bundle?){
+  // Draw behind the status and navigation bars; the header and nav bar add their own insets so nothing is hidden.
+  enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+  super.onCreate(savedInstanceState)
+  val prefs=UiPrefs(applicationContext)
+  Pal.useTheme(prefs.theme)
+  val systemReduced=AndroidSettings.Global.getFloat(contentResolver,AndroidSettings.Global.ANIMATOR_DURATION_SCALE,1f)==0f
+  setContent {
+   val scheme=darkColorScheme(primary=Pal.accent,onPrimary=Color(0xFF031014),background=Pal.bg,surface=Pal.panel,onSurface=Pal.text,onBackground=Pal.text,
+    surfaceVariant=Pal.panelHi,onSurfaceVariant=Pal.muted,outline=Pal.border)
+   val density=LocalDensity.current
+   MaterialTheme(colorScheme=scheme){
+    CompositionLocalProvider(LocalAnim provides (prefs.animations&&!systemReduced),LocalDensity provides Density(density.density,density.fontScale*prefs.textScale)){
+     Screen(SecureConnectionStore(applicationContext),prefs)
+    }
+   }
+  }
  }
 }
-@Composable private fun Tag(label:String,color:Color=accent){
- Surface(color=color.copy(alpha=.13f),shape=RoundedCornerShape(10.dp)){
-  Text(label,color=color,style=MaterialTheme.typography.labelSmall,modifier=Modifier.padding(horizontal=8.dp,vertical=5.dp))
+
+@Composable private fun StatusChip(live:Boolean,connected:Boolean){
+ val shape=RoundedCornerShape(12.dp)
+ Row(Modifier.clip(shape).background(Pal.panel).border(1.dp,Pal.border,shape).padding(horizontal=10.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
+  LiveDot(live)
+  Text(if(live)"LIVE" else if(connected)"DEMO" else "OFFLINE",color=if(live)Pal.green else Pal.amber,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)
  }
 }
-@Composable private fun TextInfo(text:String){Text(text,color=muted,style=MaterialTheme.typography.bodySmall)}
-@Composable private fun Title(text:String){Text(text,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)}
-@Composable private fun Screen(store:SecureConnectionStore){
+
+/** The title area, after the desktop header: an icon box, the page title and subtitle, and the connection status. It stays below the status bar. */
+@Composable private fun AppHeader(tab:Tab,live:Boolean,connected:Boolean,onRefresh:()->Unit){
+ val on=LocalAnim.current
+ var turns by remember{mutableStateOf(0f)}
+ val spin by animateFloatAsState(turns,motion(on,tween(700,easing=FastOutSlowInEasing)),label="spin")
+ val shape=RoundedCornerShape(16.dp)
+ Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top+WindowInsetsSides.Horizontal)).padding(horizontal=16.dp,vertical=12.dp),
+  verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+  Box(Modifier.size(48.dp).shadow(12.dp,shape,ambientColor=Pal.accent,spotColor=Pal.accent).clip(shape).background(Brush.verticalGradient(listOf(Pal.panelHi,Pal.panel))).border(1.dp,Pal.accent.copy(alpha=.6f),shape),contentAlignment=Alignment.Center){
+   AnimatedContent(targetState=tab.icon,transitionSpec={if(on)fadeIn(tween(200)) togetherWith fadeOut(tween(120)) else EnterTransition.None togetherWith ExitTransition.None},label="headerIcon"){icon->
+    Icon(icon,null,tint=Pal.accent)
+   }
+  }
+  AnimatedContent(targetState=tab,modifier=Modifier.weight(1f),transitionSpec={if(on)fadeIn(tween(220)) togetherWith fadeOut(tween(120)) else EnterTransition.None togetherWith ExitTransition.None},label="headerTitle"){t->
+   Column{
+    Text(t.title,color=Pal.text,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
+    Info(t.subtitle)
+   }
+  }
+  StatusChip(live,connected)
+  IconButton(onClick={turns+=360f;onRefresh()}){Icon(Icons.Outlined.Refresh,"Refresh",tint=Pal.accent,modifier=Modifier.graphicsLayer{rotationZ=spin})}
+ }
+}
+
+@Composable private fun Screen(store:SecureConnectionStore,prefs:UiPrefs){
  val api=remember{ApiClient()}
  val scope=rememberCoroutineScope()
+ val anim=LocalAnim.current
  val deviceId=remember{UUID.randomUUID().toString()}
  val saved=remember{store.load()}
  var base by remember{mutableStateOf(saved?.first?:"")}
  var token by remember{mutableStateOf(saved?.second?:"")}
  var live by remember{mutableStateOf(false)}
+ var connected by remember{mutableStateOf(false)}
  var snapshot by remember{mutableStateOf(demo())}
  var tab by remember{mutableStateOf(Tab.Home)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
+ var chatList by remember{mutableStateOf(demoChats())}
+ var openChat by remember{mutableStateOf<ChatSummary?>(null)}
+ var chatMessages by remember{mutableStateOf<List<ChatMessage>>(emptyList())}
+ var chatLoading by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
  suspend fun refresh(){
-  try{val new=api.snapshot(base,token);snapshot=new;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
-  catch(e:Exception){live=false;notice="Connection lost: "+(e.message?:"offline")}
+  try{val new=api.snapshot(base,token);snapshot=new;connected=true;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
+  catch(e:Exception){live=false;connected=false;notice="Connection lost: "+(e.message?:"offline")}
+ }
+ suspend fun refreshChats(){
+  try{chatList=api.chats(base,token)}catch(e:Exception){notice="Chats unavailable: "+(e.message?:"offline")}
+ }
+ suspend fun refreshChat(id:String){
+  chatLoading=true
+  try{chatMessages=api.chat(base,token,id)}catch(e:Exception){notice="Chat unavailable: "+(e.message?:"offline")}finally{chatLoading=false}
  }
  LaunchedEffect(Unit){if(saved!=null){refresh()}}
  LaunchedEffect(live,base,token){
   while(live){delay(8000);refresh()}
  }
- Scaffold(containerColor=bg,topBar={
-  Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-   Column{Text("PhAize",fontWeight=FontWeight.ExtraBold,style=MaterialTheme.typography.headlineSmall,color=accent)
-     Text(if(live)"LIVE • Desktop connected" else "DEMO / OFFLINE",color=if(live)green else amber,style=MaterialTheme.typography.labelSmall)}
-   IconButton(onClick={scope.launch{if(live)refresh()}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+ LaunchedEffect(connected){if(!connected){chatList=demoChats()}}
+ LaunchedEffect(connected,tab,openChat?.id){
+  if(connected&&tab==Tab.Chats){
+   while(true){refreshChats();openChat?.let{refreshChat(it.id)};delay(8000)}
   }
- },bottomBar={
-  NavigationBar(containerColor=panel){
-   Tab.entries.forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={
-    val icon=when(t){Tab.Home->Icons.Outlined.Dashboard;Tab.Agents->Icons.Outlined.SmartToy;Tab.Approvals->Icons.Outlined.VerifiedUser;Tab.Files->Icons.Outlined.FolderOpen;Tab.History->Icons.Outlined.History;Tab.Settings->Icons.Outlined.Settings}
-    Icon(icon,t.text)
-   },label={Text(t.text,style=MaterialTheme.typography.labelSmall)})}
-  }
- }){padding->
-  Column(Modifier.padding(padding)){
-   if(notice!=null)Card{Text(notice!!,color=amber,style=MaterialTheme.typography.bodySmall);TextButton(onClick={notice=null}){Text("Dismiss")}}
-   when(tab){
-    Tab.Home->Home(snapshot,{tab=it})
-    Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
-    Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
-    Tab.Files->Files(snapshot)
-    Tab.History->History(snapshot)
-    Tab.Settings->Settings(base,token,live,{base=it},{token=it},{
-      scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;live=s.mode=="live"
-       if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
-       else notice="Demo gateway: real controls remain disabled"
-      }catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-     },{store.clear();token="";base="";live=false;snapshot=demo();notice="Connection removed"},busy)
+ }
+ val shownMessages=if(connected)chatMessages else (openChat?.let{demoMessages(it.id)}?:emptyList())
+ val chatBanner=when{!connected->"Showing sample conversations. Connect a gateway in Settings to read your real chats.";!live->"Demo gateway: these conversations are samples.";else->null}
+ val navItems=Tab.entries.map{NavItem(it.short,it.icon,if(it==Tab.Approvals&&live&&snapshot.approvalsAvailable)snapshot.approvals.size else 0)}
+ Box(Modifier.fillMaxSize().phaizeBackground()){
+  Scaffold(containerColor=Color.Transparent,topBar={AppHeader(tab,live,connected){scope.launch{if(connected)refresh()}}},
+   bottomBar={GlassNavBar(navItems,tab.ordinal){tab=Tab.entries[it]}}){padding->
+   Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()){
+    AnimatedVisibility(visible=notice!=null,enter=if(anim)fadeIn()+expandVertically() else EnterTransition.None,exit=if(anim)fadeOut()+shrinkVertically() else ExitTransition.None){
+     Glass(Modifier.padding(horizontal=16.dp,vertical=4.dp)){
+      Text(notice?:"",color=Pal.amber,style=MaterialTheme.typography.bodySmall)
+      TextButton(onClick={notice=null}){Text("Dismiss",color=Pal.accent)}
+     }
+    }
+    AnimatedContent(targetState=tab,modifier=Modifier.weight(1f),transitionSpec={
+     if(!anim)EnterTransition.None togetherWith ExitTransition.None
+     else{
+      val dir=if(targetState.ordinal>initialState.ordinal)1 else -1
+      (fadeIn(tween(260))+slideInHorizontally(tween(300,easing=FastOutSlowInEasing)){it/8*dir}) togetherWith (fadeOut(tween(140))+slideOutHorizontally(tween(260)){-it/10*dir})
+     }
+    },label="tab"){t->
+     when(t){
+      Tab.Home->Home(snapshot,{tab=it})
+      Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
+      Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
+      Tab.Chats->ChatsPage(chatBanner,chatList.chats,openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
+      Tab.Files->Files(snapshot)
+      Tab.History->History(snapshot)
+      Tab.Settings->SettingsPage(prefs,base,token,live,busy,{base=it},{token=it},{
+        scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;connected=true;live=s.mode=="live"
+         if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
+         else notice="Demo gateway: real controls remain disabled"
+        }catch(e:Exception){live=false;connected=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
+       },{store.clear();token="";base="";live=false;connected=false;snapshot=demo();openChat=null;notice="Connection removed"})
+     }
+    }
    }
   }
  }
  if(approvalPending!=null){
   val (a,yes)=approvalPending!!
-  AlertDialog(onDismissRequest={approvalPending=null},title={Text(if(yes)"Approve this operation once?" else "Deny this operation?")},
-   text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(a.title);TextInfo(a.resource);TextInfo("Agent: ${a.agentId} • Risk: ${a.risk} • Revision: ${a.revision}");Text("The native desktop must re-check this request.",color=amber)}},
+  AlertDialog(onDismissRequest={approvalPending=null},containerColor=Pal.panelHi,titleContentColor=Pal.text,textContentColor=Pal.muted,
+   title={Text(if(yes)"Approve this operation once?" else "Deny this operation?")},
+   text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(a.title,color=Pal.text);Info(a.resource);Info("Agent: ${a.agentId} • Risk: ${a.risk} • Revision: ${a.revision}");Text("The native desktop must re-check this request.",color=Pal.amber)}},
    confirmButton={Button(onClick={approvalPending=null;scope.launch{busy=true;try{api.decide(base,token,a,yes,deviceId);refresh();notice="Decision sent to desktop"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text(if(yes)"Approve once" else "Deny")}},
-   dismissButton={TextButton(onClick={approvalPending=null}){Text("Cancel")}})
+   dismissButton={TextButton(onClick={approvalPending=null}){Text("Cancel",color=Pal.accent)}})
  }
  if(agentPending!=null){
   val (a,action)=agentPending!!
-  AlertDialog(onDismissRequest={agentPending=null},title={Text("Send ${action.replace('_',' ')} to ${a.name}?")},
+  AlertDialog(onDismissRequest={agentPending=null},containerColor=Pal.panelHi,titleContentColor=Pal.text,textContentColor=Pal.muted,
+   title={Text("Send ${action.replace('_',' ')} to ${a.name}?")},
    text={Text("A native authorization check is required; emergency stop cannot be undone from this screen.")},
    confirmButton={Button(onClick={agentPending=null;scope.launch{busy=true;try{api.control(base,token,a,action,snapshot.revision,deviceId);refresh();notice="Control request sent"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Confirm")}},
-   dismissButton={TextButton(onClick={agentPending=null}){Text("Cancel")}})
+   dismissButton={TextButton(onClick={agentPending=null}){Text("Cancel",color=Pal.accent)}})
  }
 }
-@Composable private fun ListPage(title:String,content:androidx.compose.foundation.lazy.LazyListScope.()->Unit){
- LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(14.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
-  item{Title(title)};content()
+
+@Composable private fun ListPage(content:LazyListScope.()->Unit){
+ LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
+}
+
+@Composable private fun StatCard(modifier:Modifier,value:Int?,label:String,colour:Color){
+ val on=LocalAnim.current
+ val shown by animateIntAsState(value?:0,motion(on,tween(800,easing=FastOutSlowInEasing)),label="count")
+ Glass(modifier){
+  Text(if(value==null)"—" else shown.toString(),color=colour,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+  Info(label)
  }
 }
-@Composable private fun AgentCard(a:Agent,live:Boolean,onControl:(Agent,String)->Unit){
- Card{
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.name,fontWeight=FontWeight.Bold);Tag(a.status,if(a.status=="working")green else accent)}
-  TextInfo(a.role+" • "+(a.task?:"No active task"))
-  TextInfo(if(a.metricsAvailable)"CPU ${a.cpu}%   RAM ${a.memoryMb} MB" else "Resource metrics not connected")
+
+@Composable private fun AgentCard(index:Int,a:Agent,live:Boolean,onControl:(Agent,String)->Unit){
+ Glass(Modifier.enter(index)){
+  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text(a.name,color=Pal.text,fontWeight=FontWeight.Bold);Tag(a.status,if(a.status=="working")Pal.green else Pal.accent)}
+  Info(a.role+" • "+(a.task?:"No active task"))
+  Info(if(a.metricsAvailable)"CPU ${a.cpu}%   RAM ${a.memoryMb} MB" else "Resource metrics not connected")
   if(live) Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
    OutlinedButton(onClick={onControl(a,"pause")}){Text("Pause")}
    OutlinedButton(onClick={onControl(a,"resume")}){Text("Resume")}
-   Button(onClick={onControl(a,"emergency_stop")},colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637))){Text("Stop")}
+   Button(onClick={onControl(a,"emergency_stop")},colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637),contentColor=Color.White)){Text("Stop")}
   }
  }
 }
-@Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage("Overview"){
- item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo(if(s.mode=="live")"Resource metrics not yet connected" else "Demo metrics only")}}
- item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(if(s.approvalsAvailable)s.approvals.size.toString() else "—",color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
- item{TextButton(onClick={go(Tab.Approvals)}){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration")}}
- items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
- item{TextInfo(if(s.mode=="live")"Recent recorded event sample: ${s.sampledEvents} (not full history)" else "Demo events: ${s.eventsToday}")}
+
+@Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage{
+ item{Glass(Modifier.enter(0)){Text(s.host.name,color=Pal.text,fontWeight=FontWeight.Bold);Info("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");Info(if(s.mode=="live")"Resource metrics not yet connected" else "Demo metrics only")}}
+ item{Row(Modifier.enter(1),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+  StatCard(Modifier.weight(1f),s.agents.count{it.status!="idle"},"Active agents",Pal.accent)
+  StatCard(Modifier.weight(1f),if(s.approvalsAvailable)s.approvals.size else null,"Approvals",Pal.amber)
+ }}
+ item{TextButton(onClick={go(Tab.Approvals)},modifier=Modifier.enter(2)){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration",color=Pal.accent)}}
+ itemsIndexed(s.tasks){i,t->
+  val on=LocalAnim.current
+  val progress by animateFloatAsState(t.progress.coerceIn(0,100)/100f,motion(on,tween(900,easing=FastOutSlowInEasing)),label="progress")
+  Glass(Modifier.enter(i+3)){
+   Text(t.title,color=Pal.text,fontWeight=FontWeight.Bold);Info("${t.agentId?:"Unassigned"} • ${t.status}")
+   LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth(),color=Pal.accent,trackColor=Pal.accent.copy(alpha=.15f))
+  }
+ }
+ item{Info(if(s.mode=="live")"Recent recorded event sample: ${s.sampledEvents} (not full history)" else "Demo events: ${s.eventsToday}")}
 }
 @Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
  var q by remember{mutableStateOf("")}
- ListPage("Agents"){
-  if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=amber)}
-  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Find agent")})}
-  items(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){a->AgentCard(a,live,onControl)}
+ ListPage{
+  if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=Pal.amber,style=MaterialTheme.typography.bodySmall)}
+  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Find agent")},colors=fieldColors())}
+  itemsIndexed(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){i,a->AgentCard(i,a,live,onControl)}
  }
 }
-@Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage("Permission requests"){
- if(!live)item{Text("Native approvals are not connected. Remote decisions are disabled.",color=amber)}
- if(live&&s.approvals.isEmpty())item{TextInfo("No pending approvals.")}
- items(s.approvals){a->Card{
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.title,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Tag(a.risk,if(a.risk=="critical")red else amber)}
-  TextInfo(a.detail);Text(a.resource,color=accent,style=MaterialTheme.typography.bodySmall)
-  TextInfo("${a.agentId} • ${a.type} • Expires: ${a.expiresAt}")
+@Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage{
+ if(!live)item{Text("Native approvals are not connected. Remote decisions are disabled.",color=Pal.amber,style=MaterialTheme.typography.bodySmall)}
+ if(live&&s.approvals.isEmpty())item{Info("No pending approvals.")}
+ itemsIndexed(s.approvals){i,a->Glass(Modifier.enter(i)){
+  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text(a.title,color=Pal.text,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Tag(a.risk,if(a.risk=="critical")Pal.red else Pal.amber)}
+  Info(a.detail);Text(a.resource,color=Pal.accent,style=MaterialTheme.typography.bodySmall)
+  Info("${a.agentId} • ${a.type} • Expires: ${a.expiresAt}")
   Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
    OutlinedButton(onClick={onDecision(a,false)},enabled=live,modifier=Modifier.weight(1f)){Text("Deny")}
    Button(onClick={onDecision(a,true)},enabled=live,modifier=Modifier.weight(1f)){Text("Approve once")}
@@ -172,28 +283,17 @@ class MainActivity:ComponentActivity(){
 @Composable private fun Files(s:Snapshot){
  var q by remember{mutableStateOf("")}
  var filter by remember{mutableStateOf("All")}
- ListPage("File activity"){
-  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Search path / agent")})}
-  item{Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("All","read","modified","created").forEach{f->FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)})}}}
-  items(s.files.filter{(filter=="All"||it.action==filter)&&(it.path.contains(q,true)||it.agentId.contains(q,true))}){f->Card{Tag(f.action);Text(f.path,fontWeight=FontWeight.Medium);TextInfo("${f.agentId} • ${f.timestamp} • ${f.risk}")}}
+ ListPage{
+  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search path / agent")},colors=fieldColors())}
+  item{Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("All","read","modified","created").forEach{f->FilterChip(selected=filter==f,onClick={filter=f},label={Text(f)},
+   colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Pal.accent.copy(alpha=.2f),selectedLabelColor=Pal.accent))}}}
+  itemsIndexed(s.files.filter{(filter=="All"||it.action==filter)&&(it.path.contains(q,true)||it.agentId.contains(q,true))}){i,f->Glass(Modifier.enter(i)){Tag(f.action);Text(f.path,color=Pal.text,fontWeight=FontWeight.Medium);Info("${f.agentId} • ${f.timestamp} • ${f.risk}")}}
  }
 }
 @Composable private fun History(s:Snapshot){
  var q by remember{mutableStateOf("")}
- ListPage("Timeline & changelog"){
-  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Search events")})}
-  items(s.timeline.filter{it.title.contains(q,true)||it.detail.contains(q,true)||it.type.contains(q,true)}){e->Card{Tag(e.type);Text(e.title,fontWeight=FontWeight.Bold);TextInfo(e.detail);TextInfo("${e.timestamp} • ${e.agentId?:"System"}")}}
+ ListPage{
+  item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search events")},colors=fieldColors())}
+  itemsIndexed(s.timeline.filter{it.title.contains(q,true)||it.detail.contains(q,true)||it.type.contains(q,true)}){i,e->Glass(Modifier.enter(i)){Tag(e.type);Text(e.title,color=Pal.text,fontWeight=FontWeight.Bold);Info(e.detail);Info("${e.timestamp} • ${e.agentId?:"System"}")}}
  }
-}
-@Composable private fun Settings(base:String,token:String,live:Boolean,setBase:(String)->Unit,setToken:(String)->Unit,connect:()->Unit,disconnect:()->Unit,busy:Boolean)=ListPage("Connection"){
- item{Card{
-  Text("Trusted HTTPS desktop gateway",fontWeight=FontWeight.Bold)
-  TextInfo("Use a private HTTPS tunnel or authenticated reverse proxy. Do not expose desktop localhost over public HTTP.")
-  OutlinedTextField(base,setBase,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("https://your-private-gateway")})
-  OutlinedTextField(token,setToken,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Gateway token")},visualTransformation=PasswordVisualTransformation())
-  Button(onClick=connect,enabled=!busy&&base.startsWith("https://")&&token.isNotBlank()){Text("Connect securely")}
-  OutlinedButton(onClick=disconnect){Text("Disconnect / forget token")}
-  TextInfo(if(live)"Live data enabled" else "Disconnected or demo")
-  TextInfo("Credentials are encrypted with Android Keystore. Native authorization always remains on PhAize desktop.")
- }}
 }

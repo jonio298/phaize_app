@@ -23,6 +23,16 @@ The native desktop must verify the authenticated device has approval permission;
 
 Body: `{"agentId":"codex","action":"pause","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`. Allowed actions: pause, resume, emergency_stop. The desktop must authenticate and authorize the device and verify session revision, lifetime, and status. Emergency-stop must invoke native desktop controls and audit the outcome.
 
+## GET /mobile/v1/chats and GET /mobile/v1/chats/{id}
+
+Read-only conversation views for the phone. There is no write, send or approve path through chats.
+
+List: `{"chats":[{"id":"chat-codex","title":"...","agentId":"codex","preview":"...","updatedAt":"2026-11-12T00:00:00Z","messageCount":12}]}` (newest first, at most 100).
+
+Detail: `{"id":"chat-codex","title":"...","agentId":"codex","messages":[{"id":"m1","role":"user|agent|system","speaker":"You","text":"...","timestamp":"2026-11-12T00:00:00Z"}]}` (at most the latest 200 messages, each text bounded to 4000 characters).
+
+The desktop must redact secrets, tokens, credentials and file contents it does not intend the phone to see. The gateway only whitelists and bounds fields; it cannot judge content. A chat never grants or implies any permission.
+
 ## Integration steps
 
 1. Implement an immutable redacted snapshot adapter in PhAize desktop.

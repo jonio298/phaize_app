@@ -17,6 +17,9 @@ export function createDesktopAdapter({bridgeUrl,bridgeToken,fetchImpl=fetch}={})
   }
   return {
     async snapshot(){try{const state=await invoke('/mobile/v1/snapshot');if(state.schemaVersion!==1 || state.mode!=='live' || !state.host || !Array.isArray(state.agents) || !Array.isArray(state.files) || !Array.isArray(state.timeline) || !Array.isArray(state.approvals) || !Array.isArray(state.tasks)) throw Error('invalid desktop snapshot');return state;}catch{throw Error('Desktop not available; remote state cannot be trusted');}},
+    // Read-only conversation views. Anything unexpected fails closed; the desktop must redact secrets before sending.
+    async chats(){try{const r=await invoke('/mobile/v1/chats');if(!Array.isArray(r.chats))throw Error('invalid desktop chats');return r.chats;}catch{throw Error('Desktop not available; remote chats cannot be trusted');}},
+    async chat(id){try{if(!/^[a-zA-Z0-9_-]{1,80}$/.test(id))throw Error('invalid chat id');const r=await invoke('/mobile/v1/chats/'+id);if(!Array.isArray(r.messages))throw Error('invalid desktop chat');return r;}catch{throw Error('Desktop not available; remote chats cannot be trusted');}},
     async decide(request){try{return await invoke('/mobile/v1/approvals/decisions','POST',request);}catch{return FAIL;}},
     async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}}
   };

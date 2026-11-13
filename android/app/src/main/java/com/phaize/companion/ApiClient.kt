@@ -24,6 +24,9 @@ class ApiClient {
   }finally{conn.disconnect()}
  }
  suspend fun snapshot(base:String,token:String)=parseSnapshot(call(base,token,"/v1/snapshot"))
+ /** Read-only conversation views. The id is encoded, and the gateway rejects anything that is not a plain id. */
+ suspend fun chats(base:String,token:String)=parseChatList(call(base,token,"/v1/chats"))
+ suspend fun chat(base:String,token:String,id:String)=parseChatMessages(call(base,token,"/v1/chats/"+java.net.URLEncoder.encode(id,"UTF-8")))
  suspend fun decide(base:String,token:String,a:Approval,approve:Boolean,deviceId:String):String {
   val p=JSONObject().put("decision",if(approve)"approve_once" else "deny").put("deviceId",deviceId).put("expectedRevision",a.revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/approvals/${a.id}/decisions","POST",p)

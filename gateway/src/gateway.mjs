@@ -21,6 +21,11 @@ const revision=n=>Number.isSafeInteger(n)&&n>=0;
 function validDecision(d){return exact(d,['decision','deviceId','expectedRevision','requestId'])&&['approve_once','deny'].includes(d.decision)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validControl(d){return exact(d,['action','deviceId','expectedRevision','requestId'])&&['pause','resume','emergency_stop'].includes(d.action)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function resultStatus(outcome){return {ok:200,not_found:404,expired:410,conflict:409,forbidden:403,unavailable:503}[outcome?.status]??503;}
+// Chats are read-only. Output is whitelisted and bounded here; redaction of secrets is the desktop bridge's job.
+const clip=(v,max)=>typeof v==='string'?v.slice(0,max):'';
+const ROLES=['user','agent','system'];
+const cleanChats=list=>(Array.isArray(list)?list:[]).slice(0,100).map(c=>({id:clip(c?.id,80),title:clip(c?.title,120),agentId:clip(c?.agentId,80),preview:clip(c?.preview,200),updatedAt:clip(c?.updatedAt,40),messageCount:Number.isSafeInteger(c?.messageCount)&&c.messageCount>=0?c.messageCount:0})).filter(c=>ID.test(c.id));
+const cleanChat=c=>({id:clip(c?.id,80),title:clip(c?.title,120),agentId:clip(c?.agentId,80),messages:(Array.isArray(c?.messages)?c.messages:[]).slice(-200).map(m=>({id:clip(m?.id,80),role:ROLES.includes(m?.role)?m.role:'system',speaker:clip(m?.speaker,80),text:clip(m?.text,4000),timestamp:clip(m?.timestamp,40)}))});
 export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
  if(!adapter||typeof adapter.snapshot!=='function'||typeof adapter.decide!=='function')throw Error('desktop adapter required');
  if(typeof token!=='string'||token.length<32)throw Error('gateway bearer must be at least 32 characters');
@@ -39,6 +44,17 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
      if(!revision(from))return json(res,400,{error:'invalid_cursor'});
      const s=await adapter.snapshot();
      return json(res,200,{revision:s.revision,events:(s.timeline??[]).filter(e=>Number.isInteger(e.revision)&&e.revision>from).slice(-100),resync:from>s.revision});
+   }
+   if(req.method==='GET'&&url.pathname==='/v1/chats'){
+     if(typeof adapter.chats!=='function')return json(res,200,{availability:'not_connected',chats:[]});
+     return json(res,200,{availability:'connected',chats:cleanChats(await adapter.chats())});
+   }
+   const chat=url.pathname.match(/^\/v1\/chats\/([a-zA-Z0-9_-]{1,80})$/);
+   if(req.method==='GET'&&chat){
+     if(typeof adapter.chat!=='function')return json(res,503,{error:'chats_unavailable'});
+     const found=await adapter.chat(chat[1]);
+     if(!found)return json(res,404,{error:'not_found'});
+     return json(res,200,cleanChat(found));
    }
    const approval=url.pathname.match(/^\/v1\/approvals\/([a-zA-Z0-9_-]{1,80})\/decisions$/);
    const agent=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/control$/);
