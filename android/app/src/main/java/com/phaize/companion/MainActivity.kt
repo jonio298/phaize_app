@@ -1,6 +1,11 @@
 package com.phaize.companion
 
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -40,7 +45,7 @@ private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":
 "timeline":[{"id":"t1","type":"task","title":"Sample task in progress","detail":"Connect a trusted live desktop gateway for real information","timestamp":"sample","agentId":"codex"}],
 "statistics":{"eventsToday":1,"blockedToday":0,"completedToday":0}}""")
 class MainActivity:ComponentActivity(){
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent {
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);LocalAlerts.createChannel(this);setContent {
   MaterialTheme(colorScheme=scheme){Screen(SecureConnectionStore(applicationContext))}
  }}
 }
@@ -58,6 +63,10 @@ class MainActivity:ComponentActivity(){
 @Composable private fun Title(text:String){Text(text,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)}
 @Composable private fun Screen(store:SecureConnectionStore){
  val api=remember{ApiClient()}
+ val context=LocalContext.current
+ val notificationPrefs=remember{context.getSharedPreferences("notification_preferences",android.content.Context.MODE_PRIVATE)}
+ var notifyEnabled by remember{mutableStateOf(notificationPrefs.getBoolean("enabled",false))}
+ val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->notifyEnabled=granted;notificationPrefs.edit().putBoolean("enabled",granted).apply()}
  val scope=rememberCoroutineScope()
  val deviceId=remember{UUID.randomUUID().toString()}
  val saved=remember{store.load()}
@@ -95,6 +104,21 @@ class MainActivity:ComponentActivity(){
    if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null){extraBusy=true;try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){chatPage=null;notice="Chat: "+(e.message?:"unavailable")}finally{extraBusy=false}}
    if(tab==Tab.Work&&workView=="Reviews"){extraBusy=true;try{reviewPage=api.reviews(base,token)}catch(e:Exception){reviewPage=null;notice="Reviews: "+(e.message?:"unavailable")}finally{extraBusy=false}}
    if(tab==Tab.Security&&securityView=="Alerts"){extraBusy=true;try{alertPage=api.alerts(base,token)}catch(e:Exception){alertPage=null;notice="Alerts: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+  }
+ }
+ LaunchedEffect(live,notifyEnabled,base,token){
+  if(live&&notifyEnabled){
+   var seen=emptySet<String>()
+   var initialized=false
+   while(live&&notifyEnabled){
+    try{
+     val incoming=api.alerts(base,token)
+     val current=incoming.alerts.map{it.id}.toSet()
+     if(initialized)incoming.alerts.filter{it.id !in seen}.forEach{LocalAlerts.notify(context,it)}
+     seen=current;initialized=true
+    }catch(_:Exception){initialized=false}
+    delay(15000)
+   }
   }
  }
  LaunchedEffect(live,base,token){
@@ -136,6 +160,14 @@ class MainActivity:ComponentActivity(){
      }
     }
     Tab.Security->Column{
+     Row(Modifier.fillMaxWidth().padding(horizontal=14.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
+      Text("Urgent phone alerts",style=MaterialTheme.typography.labelMedium)
+      Switch(checked=notifyEnabled,onCheckedChange={checked->
+       if(!checked){notifyEnabled=false;notificationPrefs.edit().putBoolean("enabled",false).apply()}
+       else if(LocalAlerts.permitted(context)){notifyEnabled=true;notificationPrefs.edit().putBoolean("enabled",true).apply()}
+       else if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+      })
+     }
      Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Approvals","Alerts").forEach{v->FilterChip(selected=securityView==v,onClick={securityView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
      Box(Modifier.weight(1f)){
       when(securityView){
