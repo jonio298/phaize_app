@@ -125,10 +125,12 @@ private val successGreen=Color(0xFF82DAAE)
    }},
    dismissButton={TextButton(onClick={selected=null}){Text("Close")}})
   }
- if(choice!=null){
-  val decision=choice!!
-  val review=page?.reviews?.find{it.id==selected?.id}
-  // The review ID is captured by the pending decision state below, never inferred from a replacement list.
+ if(pendingDecision!=null){
+  val (item,decision)=pendingDecision!!
+  AlertDialog(onDismissRequest={pendingDecision=null},title={Text("Confirm review decision")},
+   text={Text("Send "+decision.replace('_',' ')+" for "+item.title+"? The desktop will revalidate the review and revision.")},
+   confirmButton={Button(onClick={pendingDecision=null;onDecision(item,decision)}){Text("Confirm")}},
+   dismissButton={TextButton(onClick={pendingDecision=null}){Text("Cancel")}})
  }
 }
 @Composable fun AlertsScreen(live:Boolean,loading:Boolean,page:AlertPage?,onOpenApprovals:()->Unit){
