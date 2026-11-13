@@ -21,7 +21,13 @@ The native desktop must verify the authenticated device has approval permission;
 
 ## POST /mobile/v1/agent-control
 
-Body: `{"agentId":"codex","action":"pause","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`. Allowed actions: pause, resume, emergency_stop. The desktop must authenticate and authorize the device and verify session revision, lifetime, and status. Emergency-stop must invoke native desktop controls and audit the outcome.
+Body: `{"agentId":"codex","action":"pause","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`. Allowed actions: start, pause, resume, emergency_stop. `start` must start only an existing authorized native agent/session definition, not execute a mobile-supplied command or path. The native service must confirm the agent is stopped, ensure its workspace and policy remain valid, and enforce MXC before launch. The desktop must authenticate and authorize the device and verify session revision, lifetime, and status. Emergency-stop must invoke native desktop controls and audit the outcome.
+
+## POST /mobile/v1/agent-permissions
+
+Body: `{"agentId":"codex","read":"allow","write":"ask","delete":"ask","deviceId":"device-id","expectedRevision":5,"requestId":"unique-id"}`.
+
+Only `read=allow|ask|deny`, `write=ask|deny` and `delete=ask|deny` are accepted by the gateway. Mobile cannot enable unrestricted writes/deletes. These values are requests, not effective permissions. The native desktop must authorize the device to manage this agent's policy, validate a live revision and workspace, compare against organizational/admin floors, update the enforcement policy atomically, apply any required MXC/lease reconfiguration and persist audit + idempotency **before** reporting success. If enforcement update fails, retain the old stricter effective policy and return `unavailable` or `forbidden`. Return effective policy in a subsequent snapshot as `agents[].permissions = {"read":"allow","write":"ask","delete":"ask"}`. The mobile UI must not imply success from a request accepted only by the HTTP gateway.
 
 ## Integration steps
 
