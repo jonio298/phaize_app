@@ -64,6 +64,15 @@ class ApiClient {
   val p=JSONObject().put("decision",decision).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/reviews/"+reviewId+"/decision","POST",p)
  }
+ suspend fun remoteConsole(base:String,token:String):RemoteConsole =
+  parseRemoteConsole(call(base,token,"/v1/remote/console"))
+ suspend fun remoteAction(base:String,token:String,action:String,revision:Int,deviceId:String,fields:Map<String,Any> = emptyMap()):String {
+  require(action in listOf("lockdown","run_command","restore_checkpoint","set_limits","capture_preview","refresh_git"))
+  val payload=JSONObject().put("action",action).put("deviceId",deviceId).put("expectedRevision",revision)
+   .put("requestId",UUID.randomUUID().toString())
+  fields.forEach{(key,value)->payload.put(key,value)}
+  return call(base,token,"/v1/remote/actions","POST",payload)
+ }
  suspend fun permissions(base:String,token:String,a:Agent,read:String,write:String,delete:String,revision:Int,deviceId:String):String {
   require(read in listOf("allow","ask","deny") && write in listOf("ask","deny") && delete in listOf("ask","deny"))
   val p=JSONObject().put("read",read).put("write",write).put("delete",delete).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
