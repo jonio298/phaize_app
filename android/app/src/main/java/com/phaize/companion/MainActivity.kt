@@ -70,6 +70,7 @@ class MainActivity:ComponentActivity(){
  var busy by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
+ var policyPending by remember{mutableStateOf<Agent?>(null)}
  suspend fun refresh(){
   try{val new=api.snapshot(base,token);snapshot=new;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
   catch(e:Exception){live=false;notice="Connection lost: "+(e.message?:"offline")}
@@ -96,7 +97,7 @@ class MainActivity:ComponentActivity(){
    if(notice!=null)Card{Text(notice!!,color=amber,style=MaterialTheme.typography.bodySmall);TextButton(onClick={notice=null}){Text("Dismiss")}}
    when(tab){
     Tab.Home->Home(snapshot,{tab=it})
-    Tab.Agents->Agents(snapshot,live){a,action->agentPending=a to action}
+    Tab.Agents->Agents(snapshot,live,{a,action->agentPending=a to action},{a->policyPending=a})
     Tab.Approvals->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
     Tab.Files->Files(snapshot)
     Tab.History->History(snapshot)
@@ -113,14 +114,32 @@ class MainActivity:ComponentActivity(){
   val (a,yes)=approvalPending!!
   AlertDialog(onDismissRequest={approvalPending=null},title={Text(if(yes)"Approve this operation once?" else "Deny this operation?")},
    text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(a.title);TextInfo(a.resource);TextInfo("Agent: ${a.agentId} • Risk: ${a.risk} • Revision: ${a.revision}");Text("The native desktop must re-check this request.",color=amber)}},
-   confirmButton={Button(onClick={approvalPending=null;scope.launch{busy=true;try{api.decide(base,token,a,yes,deviceId);refresh();notice="Decision sent to desktop"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text(if(yes)"Approve once" else "Deny")}},
+   confirmButton={Button(onClick={approvalPending=null;scope.launch{busy=true;try{api.decide(base,token,a,yes,deviceId);refresh();notice="Desktop accepted approval decision"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text(if(yes)"Approve once" else "Deny")}},
    dismissButton={TextButton(onClick={approvalPending=null}){Text("Cancel")}})
+ }
+ if(policyPending!=null){
+  val a=policyPending!!
+  var read by remember(a.id){mutableStateOf(a.readPermission.takeIf{it in listOf("allow","ask","deny") }?:"allow")}
+  var write by remember(a.id){mutableStateOf(a.writePermission.takeIf{it in listOf("ask","deny") }?:"ask")}
+  var delete by remember(a.id){mutableStateOf(a.deletePermission.takeIf{it in listOf("ask","deny") }?:"ask")}
+  AlertDialog(onDismissRequest={policyPending=null},title={Text("Permissions • ${a.name}")},
+   text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+    TextInfo("Changes require native desktop authorization. Mobile cannot enable automatic writes or deletes.")
+    Text("Read",fontWeight=FontWeight.Bold)
+    Row{listOf("allow","ask","deny").forEach{v->FilterChip(selected=read==v,onClick={read=v},label={Text(v)},modifier=Modifier.padding(end=5.dp))}}
+    Text("Write",fontWeight=FontWeight.Bold)
+    Row{listOf("ask","deny").forEach{v->FilterChip(selected=write==v,onClick={write=v},label={Text(v)},modifier=Modifier.padding(end=5.dp))}}
+    Text("Delete",fontWeight=FontWeight.Bold)
+    Row{listOf("ask","deny").forEach{v->FilterChip(selected=delete==v,onClick={delete=v},label={Text(v)},modifier=Modifier.padding(end=5.dp))}}
+   }},
+   confirmButton={Button(onClick={policyPending=null;scope.launch{busy=true;try{api.permissions(base,token,a,read,write,delete,snapshot.revision,deviceId);refresh();notice="Desktop accepted permission request"}catch(e:Exception){notice=e.message?:"Permission change failed"}finally{busy=false}}},enabled=live&&!busy){Text("Apply")}},
+   dismissButton={TextButton(onClick={policyPending=null}){Text("Cancel")}})
  }
  if(agentPending!=null){
   val (a,action)=agentPending!!
   AlertDialog(onDismissRequest={agentPending=null},title={Text("Send ${action.replace('_',' ')} to ${a.name}?")},
    text={Text("A native authorization check is required; emergency stop cannot be undone from this screen.")},
-   confirmButton={Button(onClick={agentPending=null;scope.launch{busy=true;try{api.control(base,token,a,action,snapshot.revision,deviceId);refresh();notice="Control request sent"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Confirm")}},
+   confirmButton={Button(onClick={agentPending=null;scope.launch{busy=true;try{api.control(base,token,a,action,snapshot.revision,deviceId);refresh();notice="Desktop accepted control request"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Confirm")}},
    dismissButton={TextButton(onClick={agentPending=null}){Text("Cancel")}})
  }
 }
@@ -129,15 +148,20 @@ class MainActivity:ComponentActivity(){
   item{Title(title)};content()
  }
 }
-@Composable private fun AgentCard(a:Agent,live:Boolean,onControl:(Agent,String)->Unit){
+@Composable private fun AgentCard(a:Agent,live:Boolean,onControl:(Agent,String)->Unit,onPermissions:(Agent)->Unit){
  Card{
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.name,fontWeight=FontWeight.Bold);Tag(a.status,if(a.status=="working")green else accent)}
   TextInfo(a.role+" • "+(a.task?:"No active task"))
   TextInfo("CPU ${a.cpu}%   RAM ${a.memoryMb} MB")
-  if(live) Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
-   OutlinedButton(onClick={onControl(a,"pause")}){Text("Pause")}
-   OutlinedButton(onClick={onControl(a,"resume")}){Text("Resume")}
-   Button(onClick={onControl(a,"emergency_stop")},colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637))){Text("Stop")}
+  if(live){
+   Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+    OutlinedButton(onClick={onControl(a,"start")},enabled=a.status in listOf("idle","stopped","exited")){Text("Start")}
+    OutlinedButton(onClick={onControl(a,"pause")},enabled=a.status !in listOf("paused","stopped","idle","exited")){Text("Pause")}
+    OutlinedButton(onClick={onControl(a,"resume")},enabled=a.status=="paused"){Text("Resume")}
+    Button(onClick={onControl(a,"emergency_stop")},enabled=a.status !in listOf("stopped","idle","exited"),colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637))){Text("Stop")}
+   }
+   OutlinedButton(onClick={onPermissions(a)}){Text("Permissions")}
+   TextInfo("Read: ${a.readPermission}  •  Write: ${a.writePermission}  •  Delete: ${a.deletePermission}")
   }
  }
 }
@@ -148,11 +172,11 @@ class MainActivity:ComponentActivity(){
  items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
  item{TextInfo("Events: ${s.eventsToday}   •   Blocked: ${s.blockedToday}   •   Completed: ${s.completedToday}")}
 }
-@Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
+@Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit,onPermissions:(Agent)->Unit){
  var q by remember{mutableStateOf("")}
  ListPage("Agents"){
   item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Find agent")})}
-  items(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){a->AgentCard(a,live,onControl)}
+  items(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){a->AgentCard(a,live,onControl,onPermissions)}
  }
 }
 @Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage("Permission requests"){
