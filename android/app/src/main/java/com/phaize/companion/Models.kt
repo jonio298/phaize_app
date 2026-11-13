@@ -3,7 +3,7 @@ package com.phaize.companion
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class Agent(val id:String,val name:String,val status:String,val role:String,val task:String?,val cpu:Int,val memoryMb:Int)
+data class Agent(val id:String,val name:String,val status:String,val role:String,val task:String?,val cpu:Int,val memoryMb:Int,val readPermission:String,val writePermission:String,val deletePermission:String)
 data class WorkTask(val id:String,val title:String,val agentId:String?,val status:String,val progress:Int)
 data class Approval(val id:String,val revision:Int,val agentId:String,val title:String,val detail:String,val resource:String,val type:String,val risk:String,val expiresAt:String)
 data class FileEvent(val id:String,val path:String,val action:String,val agentId:String,val timestamp:String,val risk:String)
@@ -16,7 +16,7 @@ private fun JSONObject.n(k:String)=if(isNull(k))null else optString(k).takeIf{it
 fun parseSnapshot(text:String):Snapshot {
  val o=JSONObject(text);val h=o.getJSONObject("host");val stats=o.optJSONObject("statistics")?:JSONObject()
  return Snapshot(o.optInt("revision"),o.s("mode"),Host(h.s("name"),h.optBoolean("online"),h.s("monitoring"),h.s("containment"),h.optInt("cpu"),h.optInt("memoryPercent")),
- o.items("agents"){Agent(it.s("id"),it.s("name"),it.s("status"),it.s("role"),it.n("task"),it.optInt("cpu"),it.optInt("memoryMb"))},
+ o.items("agents"){Agent(it.s("id"),it.s("name"),it.s("status"),it.s("role"),it.n("task"),it.optInt("cpu"),it.optInt("memoryMb"),it.optJSONObject("permissions")?.optString("read","allow")?:"allow",it.optJSONObject("permissions")?.optString("write","ask")?:"ask",it.optJSONObject("permissions")?.optString("delete","ask")?:"ask"))},
  o.items("tasks"){WorkTask(it.s("id"),it.s("title"),it.n("agentId"),it.s("status"),it.optInt("progress"))},
  o.items("approvals"){Approval(it.s("id"),it.optInt("revision"),it.s("agentId"),it.s("title"),it.s("detail"),it.s("resource"),it.s("type"),it.s("risk"),it.s("expiresAt"))},
  o.items("files"){FileEvent(it.s("id"),it.s("path"),it.s("action"),it.s("agentId"),it.s("timestamp"),it.s("risk"))},
