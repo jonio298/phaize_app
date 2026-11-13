@@ -40,3 +40,23 @@ fun parseErrorPage(text:String):ErrorPage {
   ErrorEntry(it.s("id"),it.s("severity"),it.s("source"),it.s("message"),it.s("timestamp"),it.n("agentId"))
  },o.optString("nextCursor").takeIf{it.isNotEmpty()})
 }
+
+data class ChatMessage(val id:String,val agentId:String,val sender:String,val text:String,val timestamp:String)
+data class ChatPage(val messages:List<ChatMessage>,val nextCursor:String?)
+data class ReviewItem(val id:String,val agentId:String,val title:String,val summary:String,val status:String,val revision:Int,val files:List<ReviewFile>)
+data class ReviewFile(val path:String,val additions:Int,val deletions:Int,val patch:String)
+data class ReviewPage(val reviews:List<ReviewItem>,val nextCursor:String?)
+data class AlertItem(val id:String,val severity:String,val title:String,val message:String,val timestamp:String,val agentId:String?)
+data class AlertPage(val alerts:List<AlertItem>,val nextCursor:String?)
+fun parseChatPage(raw:String):ChatPage {
+ val o=JSONObject(raw)
+ return ChatPage(o.items("messages"){ChatMessage(it.s("id"),it.s("agentId"),it.s("sender"),it.s("text"),it.s("timestamp"))},o.n("nextCursor"))
+}
+fun parseReviewPage(raw:String):ReviewPage {
+ val o=JSONObject(raw)
+ return ReviewPage(o.items("reviews"){r->ReviewItem(r.s("id"),r.s("agentId"),r.s("title"),r.s("summary"),r.s("status"),r.optInt("revision"),r.items("files"){f->ReviewFile(f.s("path"),f.optInt("additions"),f.optInt("deletions"),f.s("patch"))})},o.n("nextCursor"))
+}
+fun parseAlertPage(raw:String):AlertPage {
+ val o=JSONObject(raw)
+ return AlertPage(o.items("alerts"){AlertItem(it.s("id"),it.s("severity"),it.s("title"),it.s("message"),it.s("timestamp"),it.n("agentId"))},o.n("nextCursor"))
+}
