@@ -59,6 +59,23 @@ GET `/mobile/v1/reviews?after=<opaque-cursor>` returns `{"reviews":[{"id":"rev_1
 
 GET `/mobile/v1/alerts?after=<opaque-cursor>` returns `{"alerts":[{"id":"alert_1","severity":"critical","title":"Containment failure","message":"Operation blocked","timestamp":"2026-11-13T12:00:00Z","agentId":"codex"}],"nextCursor":null}`. Native must redact paths/secrets, enforce device visibility, issue stable monotonic cursors and bounded pages. Android has an in-app alert center; **background FCM push delivery is not implemented yet**. A later push service must forward only an opaque alert identifier with no user content and require secure fetch for details. Native desktop must not infer that an alert was delivered or read.
 
+## Advanced operations dashboard
+
+GET `/mobile/v1/ops` returns a bounded and redacted object:
+```json
+{"health":{"cpuPercent":20,"memoryPercent":40,"diskPercent":30,"temperatureC":55,"networkState":"restricted","coverage":"healthy"},"git":{"branch":"feature/x","dirtyFiles":2,"ahead":1,"behind":0,"lastCommit":"short redacted summary"},"checkpoints":[{"id":"check_01","title":"Before upgrade","createdAt":"2026-11-13T00:00:00Z","description":"Verified snapshot"}],"captures":[],"terminalHistory":[]}
+```
+Authorization must be per device and current workspace. Values must be actually observed, never fabricated. Git and terminal output are untrusted and may contain secrets: filter and bound returned data, redact environment variables, credentials, personal file paths, patch contents and source code as required. Max 30 checkpoints, 10 captures, 30 command records, 1200 rendered output characters per item. Return `unavailable` if monitoring or a required native subsystem is missing.
+
+POST `/mobile/v1/ops/action` accepts one of exactly these discriminator shapes, each plus `deviceId`, `expectedRevision` and unique `requestId`:
+- `{"action":"lockdown","reason":"Emergency security concern"}`: native coordinator freezes agents and blocks pending new starts until local recovery. Audit actor and reason. Remote unlocking is **not** permitted.
+- `{"action":"limits","agentId":"codex","cpuPercent":50,"memoryMb":2048,"network":"restricted"}`: per-agent caps, CPU 10–100, memory 256–65536 MB, network one of `off|restricted|policy`. `policy` restores the desktop-owned effective network policy, not unrestricted access. Reject limits weaker than the administrative floor.
+- `{"action":"terminal_preset","agentId":"codex","commandId":"run_tests"}`: only `git_status|git_diff_stat|run_tests`. Resolve the command from a native **immutable server-side registry** bound to workspace and session, not from user-supplied arguments, shell templates, working directories or environment. Enforce MXC, resource caps, timeouts and output redaction; a mobile device cannot request arbitrary terminal input.
+- `{"action":"checkpoint_restore","checkpointId":"check_01"}`: a **request**, not immediate execution. Native must verify identity, checkpoint integrity, scope, revision, uncommitted work, and require separate local authorization for destructive restore or a two-phase challenge with impact summary. Do not return `ok` for a completed restore unless native enforcement actually committed it.
+- `{"action":"capture","target":"phaize_window"}`: request a sanitized capture of **only** the PhAize application window after native window identity verification, secret redaction and authorization. The companion currently shows metadata and capture IDs, not image pixels. Do not serve raw desktop screenshots or unrestricted image URLs.
+
+All actions require permission checks, durable audit, revision/idempotency, native confirmation, and MXC containment where applicable. The gateway cannot authorize a command by itself. Responses `status=forbidden|conflict|unavailable` are never success. Native host restart invalidates stale pending controls. Maintain separate device-scoped capabilities (view health, run presets, read Git, control limits, restore checkpoint, invoke lockdown, capture window).
+
 ## Integration steps
 
 1. Implement an immutable redacted snapshot adapter in PhAize desktop.
