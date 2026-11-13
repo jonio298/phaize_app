@@ -60,3 +60,20 @@ fun parseAlertPage(raw:String):AlertPage {
  val o=JSONObject(raw)
  return AlertPage(o.items("alerts"){AlertItem(it.s("id"),it.s("severity"),it.s("title"),it.s("message"),it.s("timestamp"),it.n("agentId"))},o.n("nextCursor"))
 }
+
+data class OpsHealth(val cpuPercent:Int,val memoryPercent:Int,val diskPercent:Int,val temperatureC:Int?,val networkState:String,val coverage:String)
+data class OpsGit(val branch:String,val dirtyFiles:Int,val ahead:Int,val behind:Int,val lastCommit:String)
+data class OpsCheckpoint(val id:String,val title:String,val createdAt:String,val description:String)
+data class OpsCapture(val id:String,val timestamp:String,val description:String,val status:String)
+data class OpsCommand(val id:String,val agentId:String,val label:String,val status:String,val output:String,val timestamp:String)
+data class OpsPage(val health:OpsHealth?,val git:OpsGit?,val checkpoints:List<OpsCheckpoint>,val captures:List<OpsCapture>,val terminalHistory:List<OpsCommand>)
+fun parseOpsPage(raw:String):OpsPage{
+ val o=JSONObject(raw)
+ val h=o.optJSONObject("health")?.let{OpsHealth(it.optInt("cpuPercent"),it.optInt("memoryPercent"),it.optInt("diskPercent"),if(it.has("temperatureC")&&!it.isNull("temperatureC"))it.optInt("temperatureC") else null,it.s("networkState"),it.s("coverage"))}
+ val g=o.optJSONObject("git")?.let{OpsGit(it.s("branch"),it.optInt("dirtyFiles"),it.optInt("ahead"),it.optInt("behind"),it.s("lastCommit"))}
+ return OpsPage(h,g,
+  o.items("checkpoints"){OpsCheckpoint(it.s("id"),it.s("title"),it.s("createdAt"),it.s("description"))},
+  o.items("captures"){OpsCapture(it.s("id"),it.s("timestamp"),it.s("description"),it.s("status"))},
+  o.items("terminalHistory"){OpsCommand(it.s("id"),it.s("agentId"),it.s("label"),it.s("status"),it.s("output"),it.s("timestamp"))}
+ )
+}
