@@ -31,7 +31,7 @@ private val amber=Color(0xFFF1BD72)
 private val red=Color(0xFFEA8B8B)
 private val green=Color(0xFF82DAAE)
 private val scheme=darkColorScheme(primary=accent,background=bg,surface=panel,onSurface=Color(0xFFEAF5F7),onBackground=Color.White)
-private enum class Tab(val text:String){Home("Home"),Agents("Agents"),Tasks("Tasks"),Approvals("Approve"),Files("Files"),Logs("Logs"),Settings("Settings")}
+private enum class Tab(val text:String){Home("Home"),Agents("Agents"),Work("Work"),Security("Security"),More("More") }
 private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":{"name":"PhAize Sample","online":false,"monitoring":"demo","containment":"demo","cpu":0,"memoryPercent":0},
 "agents":[{"id":"codex","name":"Codex","status":"working","role":"Implementer","task":"Android gateway integration","cpu":9,"memoryMb":1700},{"id":"claude","name":"Claude Code","status":"reviewing","role":"Reviewer","task":"Security review","cpu":5,"memoryMb":1900}],
 "tasks":[{"id":"T-01","title":"Mobile UI and state","agentId":"codex","status":"in_progress","progress":70}],
@@ -72,6 +72,14 @@ class MainActivity:ComponentActivity(){
  var errorsPage by remember{mutableStateOf<ErrorPage?>(null)}
  var fileStack by remember{mutableStateOf(listOf<String>())}
  var loadingExtra by remember{mutableStateOf(false)}
+ var workView by remember{mutableStateOf("Tasks")}
+ var securityView by remember{mutableStateOf("Approvals")}
+ var moreView by remember{mutableStateOf("Files")}
+ var chatPage by remember{mutableStateOf<ChatPage?>(null)}
+ var reviewPage by remember{mutableStateOf<ReviewPage?>(null)}
+ var alertPage by remember{mutableStateOf<AlertPage?>(null)}
+ var chatAgentId by remember{mutableStateOf<String?>(null)}
+ var extraBusy by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
  var policyPending by remember{mutableStateOf<Agent?>(null)}
@@ -80,9 +88,14 @@ class MainActivity:ComponentActivity(){
   catch(e:Exception){live=false;notice="Connection lost: "+(e.message?:"offline")}
  }
  LaunchedEffect(Unit){if(saved!=null){refresh()}}
- LaunchedEffect(tab,live,base){
-  if(live && tab==Tab.Files){loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){browserPage=null;notice="File browser: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
-  if(live && tab==Tab.Logs){loadingExtra=true;try{errorsPage=api.errors(base,token)}catch(e:Exception){errorsPage=null;notice="Error log: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+ LaunchedEffect(tab,workView,securityView,moreView,live,base,chatAgentId){
+  if(live){
+   if(tab==Tab.More&&moreView=="Files"){loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){browserPage=null;notice="File browser: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+   if(tab==Tab.More&&moreView=="Logs"){loadingExtra=true;try{errorsPage=api.errors(base,token)}catch(e:Exception){errorsPage=null;notice="Error log: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+   if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null){extraBusy=true;try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){chatPage=null;notice="Chat: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+   if(tab==Tab.Work&&workView=="Reviews"){extraBusy=true;try{reviewPage=api.reviews(base,token)}catch(e:Exception){reviewPage=null;notice="Reviews: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+   if(tab==Tab.Security&&securityView=="Alerts"){extraBusy=true;try{alertPage=api.alerts(base,token)}catch(e:Exception){alertPage=null;notice="Alerts: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+  }
  }
  LaunchedEffect(live,base,token){
   while(live){delay(8000);refresh()}
@@ -92,14 +105,14 @@ class MainActivity:ComponentActivity(){
    Column{Text("PhAize",fontWeight=FontWeight.ExtraBold,style=MaterialTheme.typography.headlineSmall,color=accent)
      Text(if(live)"LIVE • Desktop connected" else "DEMO / OFFLINE",color=if(live)green else amber,style=MaterialTheme.typography.labelSmall)}
    Row{
-    IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Logs)try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Files)try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
-    IconButton(onClick={tab=Tab.Settings}){Icon(Icons.Outlined.Settings,"Connection settings",tint=accent)}
+    IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Security&&securityView=="Alerts")try{alertPage=api.alerts(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null)try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Reviews")try{reviewPage=api.reviews(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Logs")try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Files")try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+    IconButton(onClick={tab=Tab.More;moreView="Settings"}){Icon(Icons.Outlined.Settings,"Connection settings",tint=accent)}
    }
   }
  },bottomBar={
   NavigationBar(containerColor=panel){
-   listOf(Tab.Home,Tab.Agents,Tab.Tasks,Tab.Approvals,Tab.Files,Tab.Logs).forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={
-    val icon=when(t){Tab.Home->Icons.Outlined.Dashboard;Tab.Agents->Icons.Outlined.SmartToy;Tab.Tasks->Icons.Outlined.Assignment;Tab.Approvals->Icons.Outlined.VerifiedUser;Tab.Files->Icons.Outlined.FolderOpen;Tab.Logs->Icons.Outlined.BugReport;Tab.Settings->Icons.Outlined.Settings}
+   Tab.entries.forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={
+    val icon=when(t){Tab.Home->Icons.Outlined.Dashboard;Tab.Agents->Icons.Outlined.SmartToy;Tab.Work->Icons.Outlined.Assignment;Tab.Security->Icons.Outlined.VerifiedUser;Tab.More->Icons.Outlined.MoreHoriz}
     Icon(icon,t.text)
    },label={Text(t.text,style=MaterialTheme.typography.labelSmall)})}
   }
@@ -107,18 +120,42 @@ class MainActivity:ComponentActivity(){
   Column(Modifier.padding(padding)){
    if(notice!=null)Card{Text(notice!!,color=amber,style=MaterialTheme.typography.bodySmall);TextButton(onClick={notice=null}){Text("Dismiss")}}
    when(tab){
-    Tab.Home->Home(snapshot,{tab=it})
+    Tab.Home->Home(snapshot,{t->tab=when(t){Tab.Home->Tab.Home;else->Tab.Security};securityView="Approvals"})
     Tab.Agents->Agents(snapshot,live,{a,action->agentPending=a to action},{a->policyPending=a})
-    Tab.Tasks->TasksScreen(snapshot,live){title,description,agent,priority->scope.launch{busy=true;try{api.createTask(base,token,title,description,agent,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted new task"}catch(e:Exception){notice="Task failed: "+(e.message?:"unavailable")}finally{busy=false}}}
-    Tab.Approvals->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
-    Tab.Files->FileCenterScreen(snapshot,live,browserPage,fileStack,loadingExtra,{id->fileStack=fileStack+id;scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,id)}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}},{fileStack=fileStack.dropLast(1);scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}})
-    Tab.Logs->LogCenterScreen(snapshot,live,errorsPage,loadingExtra)
-    Tab.Settings->Settings(base,token,live,{base=it},{token=it},{
-      scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;live=s.mode=="live"
-       if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
-       else notice="Demo gateway: real controls remain disabled"
-      }catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-     },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;fileStack=emptyList();notice="Connection removed"},busy)
+    Tab.Work->{
+     Column{
+      Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Tasks","Goals","Chat","Reviews").forEach{v->FilterChip(selected=workView==v,onClick={workView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
+      Box(Modifier.weight(1f)){
+       when(workView){
+        "Tasks"->TasksScreen(snapshot,live){title,description,agent,priority->scope.launch{busy=true;try{api.createTask(base,token,title,description,agent,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted new task"}catch(e:Exception){notice="Task failed: "+(e.message?:"unavailable")}finally{busy=false}}}
+        "Goals"->GoalScreen(live,busy){goal,instructions,priority->scope.launch{busy=true;try{api.createGoal(base,token,goal,instructions,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted goal"}catch(e:Exception){notice="Delegation failed: "+(e.message?:"unavailable")}finally{busy=false}}}
+        "Chat"->AgentChatScreen(snapshot.agents,chatAgentId,live,extraBusy,chatPage,{id->chatAgentId=id;chatPage=null},{id,msg->scope.launch{extraBusy=true;try{api.sendChat(base,token,id,msg,snapshot.revision,deviceId);chatPage=api.chat(base,token,id);notice="Message accepted by desktop"}catch(e:Exception){notice="Message failed: "+(e.message?:"unavailable")}finally{extraBusy=false}}})
+        "Reviews"->CodeReviewScreen(live,extraBusy,reviewPage){item,decision->scope.launch{extraBusy=true;try{api.reviewDecision(base,token,item.id,decision,item.revision,deviceId);reviewPage=api.reviews(base,token);notice="Desktop accepted review decision"}catch(e:Exception){notice="Review failed: "+(e.message?:"unavailable")}finally{extraBusy=false}}}
+       }
+      }
+     }
+    }
+    Tab.Security->Column{
+     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Approvals","Alerts").forEach{v->FilterChip(selected=securityView==v,onClick={securityView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
+     Box(Modifier.weight(1f)){
+      when(securityView){
+       "Approvals"->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
+       "Alerts"->AlertsScreen(live,extraBusy,alertPage){securityView="Approvals"}
+      }
+     }
+    }
+    Tab.More->Column{
+     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Files","Logs","Settings").forEach{v->FilterChip(selected=moreView==v,onClick={moreView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
+     Box(Modifier.weight(1f)){
+      when(moreView){
+       "Files"->FileCenterScreen(snapshot,live,browserPage,fileStack,loadingExtra,{id->fileStack=fileStack+id;scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,id)}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}},{fileStack=fileStack.dropLast(1);scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}})
+       "Logs"->LogCenterScreen(snapshot,live,errorsPage,loadingExtra)
+       "Settings"->Settings(base,token,live,{base=it},{token=it},{
+        scope.launch{busy=true;try{val result=api.snapshot(base,token);snapshot=result;live=result.mode=="live";if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}else notice="Demo gateway: real controls disabled"}catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
+       },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;fileStack=emptyList();notice="Connection removed"},busy)
+      }
+     }
+    }
    }
   }
  }
@@ -180,7 +217,7 @@ class MainActivity:ComponentActivity(){
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage("Overview"){
  item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo("CPU ${s.host.cpu}%  •  Memory ${s.host.memoryPercent}%")}}
  item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.approvals.size.toString(),color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
- item{TextButton(onClick={go(Tab.Approvals)}){Text("Open pending approvals")}}
+ item{TextButton(onClick={go(Tab.Security)}){Text("Open pending approvals")}}
  items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
  item{TextInfo("Events: ${s.eventsToday}   •   Blocked: ${s.blockedToday}   •   Completed: ${s.completedToday}")}
 }
