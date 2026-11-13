@@ -40,9 +40,17 @@ private fun demo():Snapshot=parseSnapshot("""{"revision":1,"mode":"demo","host":
 "timeline":[{"id":"t1","type":"task","title":"Sample task in progress","detail":"Connect a trusted live desktop gateway for real information","timestamp":"sample","agentId":"codex"}],
 "statistics":{"eventsToday":1,"blockedToday":0,"completedToday":0}}""")
 class MainActivity:ComponentActivity(){
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent {
-  MaterialTheme(colorScheme=scheme){Screen(SecureConnectionStore(applicationContext))}
- }}
+ private var incomingPairLink by mutableStateOf("")
+ override fun onCreate(savedInstanceState:Bundle?){
+  super.onCreate(savedInstanceState)
+  incomingPairLink=intent?.dataString.orEmpty()
+  setContent { MaterialTheme(colorScheme=scheme){Screen(SecureConnectionStore(applicationContext),incomingPairLink)} }
+ }
+ override fun onNewIntent(intent:android.content.Intent){
+  super.onNewIntent(intent)
+  setIntent(intent)
+  incomingPairLink=intent.dataString.orEmpty()
+ }
 }
 @Composable private fun Card(content:@Composable ColumnScope.()->Unit){
  Surface(color=panel,shape=RoundedCornerShape(18.dp),modifier=Modifier.fillMaxWidth()){
@@ -56,8 +64,8 @@ class MainActivity:ComponentActivity(){
 }
 @Composable private fun TextInfo(text:String){Text(text,color=muted,style=MaterialTheme.typography.bodySmall)}
 @Composable private fun Title(text:String){Text(text,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)}
-@Composable private fun Screen(store:SecureConnectionStore){
- val api=remember{ApiClient()}
+@Composable private fun Screen(store:SecureConnectionStore,incomingInvite:String){
+ val api=remember{ApiClient().also{it.lanFingerprint=store.loadLanPin()}}
  val scope=rememberCoroutineScope()
  val deviceId=remember{UUID.randomUUID().toString()}
  val saved=remember{store.load()}
@@ -65,18 +73,19 @@ class MainActivity:ComponentActivity(){
  var token by remember{mutableStateOf(saved?.second?:"")}
  var live by remember{mutableStateOf(false)}
  var snapshot by remember{mutableStateOf(demo())}
- var tab by remember{mutableStateOf(Tab.Home)}
+ var tab by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))Tab.Settings else Tab.Home)}
+ var pairingLink by remember(incomingInvite){mutableStateOf(incomingInvite)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
  suspend fun refresh(){
-  try{val new=api.snapshot(base,token);snapshot=new;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
-  catch(e:Exception){live=false;notice="Connection lost: "+(e.message?:"offline")}
+  try{val new=api.snapshot(base,token);snapshot=new;live=new.mode=="live";if(!live)notice="Desktop did not confirm a live session" else notice=null}
+  catch(e:Exception){live=false;snapshot=snapshot.copy(agents=emptyList(),tasks=emptyList(),files=emptyList(),timeline=emptyList(),approvals=emptyList());notice="Local connection unavailable: "+(e.message?:"offline")}
  }
- LaunchedEffect(Unit){if(saved!=null){refresh()}}
- LaunchedEffect(live,base,token){
-  while(live){delay(8000);refresh()}
+ LaunchedEffect(Unit){if(saved!=null&&store.loadLanPin()!=null){refresh()}}
+ LaunchedEffect(base,token){
+  while(base.isNotBlank()&&token.isNotBlank()&&api.lanFingerprint!=null){delay(8000);refresh()}
  }
  Scaffold(containerColor=bg,topBar={
   Row(Modifier.fillMaxWidth().padding(16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
@@ -96,16 +105,30 @@ class MainActivity:ComponentActivity(){
    if(notice!=null)Card{Text(notice!!,color=amber,style=MaterialTheme.typography.bodySmall);TextButton(onClick={notice=null}){Text("Dismiss")}}
    when(tab){
     Tab.Home->Home(snapshot,{tab=it})
-    Tab.Agents->Agents(snapshot,live){a,action->agentPending=a to action}
-    Tab.Approvals->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
+    Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
+    Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
     Tab.Files->Files(snapshot)
     Tab.History->History(snapshot)
-    Tab.Settings->Settings(base,token,live,{base=it},{token=it},{
-      scope.launch{busy=true;try{val s=api.snapshot(base,token);snapshot=s;live=s.mode=="live"
-       if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}
-       else notice="Demo gateway: real controls remain disabled"
-      }catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-     },{store.clear();token="";base="";live=false;snapshot=demo();notice="Connection removed"},busy)
+    Tab.Settings->LanSettings(pairingLink,{pairingLink=it},live,{
+      scope.launch {
+       busy=true
+       try {
+        val invite=LanInvitation.parse(pairingLink)
+        val bearer=api.enroll(invite)
+        val state=api.snapshot(invite.base,bearer)
+        require(state.mode=="live"){"Desktop did not report live monitoring"}
+        store.save(invite.base,bearer,invite.fingerprint)
+        base=invite.base;token=bearer;snapshot=state;live=true
+        notice="Paired over local Wi-Fi (read-only)";tab=Tab.Home
+        pairingLink=""
+       }catch(e:Exception){live=false;notice="Pairing failed: "+(e.message?:"unknown")}
+       finally{busy=false}
+      }
+     },{
+      store.clear();api.lanFingerprint=null;token="";base="";live=false
+      snapshot=demo().copy(agents=emptyList(),tasks=emptyList(),files=emptyList(),timeline=emptyList(),approvals=emptyList())
+      notice="Phone disconnected. Revoke it on the Windows desktop to invalidate its access."
+     },busy)
    }
   }
  }
@@ -133,7 +156,7 @@ class MainActivity:ComponentActivity(){
  Card{
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.name,fontWeight=FontWeight.Bold);Tag(a.status,if(a.status=="working")green else accent)}
   TextInfo(a.role+" • "+(a.task?:"No active task"))
-  TextInfo("CPU ${a.cpu}%   RAM ${a.memoryMb} MB")
+  TextInfo(if(a.metricsAvailable)"CPU ${a.cpu}%   RAM ${a.memoryMb} MB" else "Resource metrics not connected")
   if(live) Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
    OutlinedButton(onClick={onControl(a,"pause")}){Text("Pause")}
    OutlinedButton(onClick={onControl(a,"resume")}){Text("Resume")}
@@ -142,22 +165,23 @@ class MainActivity:ComponentActivity(){
  }
 }
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage("Overview"){
- item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo("CPU ${s.host.cpu}%  •  Memory ${s.host.memoryPercent}%")}}
- item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.approvals.size.toString(),color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
- item{TextButton(onClick={go(Tab.Approvals)}){Text("Open pending approvals")}}
+ item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo(if(s.mode=="live")"Resource metrics not yet connected" else "Demo metrics only")}}
+ item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(if(s.approvalsAvailable)s.approvals.size.toString() else "—",color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
+ item{TextButton(onClick={go(Tab.Approvals)}){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration")}}
  items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
- item{TextInfo("Events: ${s.eventsToday}   •   Blocked: ${s.blockedToday}   •   Completed: ${s.completedToday}")}
+ item{TextInfo(if(s.mode=="live")"Recent recorded event sample: ${s.sampledEvents} (not full history)" else "Demo events: ${s.eventsToday}")}
 }
 @Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
  var q by remember{mutableStateOf("")}
  ListPage("Agents"){
+  if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=amber)}
   item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Find agent")})}
   items(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){a->AgentCard(a,live,onControl)}
  }
 }
 @Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage("Permission requests"){
- if(!live)item{Text("Demo data only; approvals disabled.",color=amber)}
- if(s.approvals.isEmpty())item{TextInfo("No pending approvals.")}
+ if(!live)item{Text("Native approvals are not connected. Remote decisions are disabled.",color=amber)}
+ if(live&&s.approvals.isEmpty())item{TextInfo("No pending approvals.")}
  items(s.approvals){a->Card{
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.title,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Tag(a.risk,if(a.risk=="critical")red else amber)}
   TextInfo(a.detail);Text(a.resource,color=accent,style=MaterialTheme.typography.bodySmall)
@@ -184,15 +208,19 @@ class MainActivity:ComponentActivity(){
   items(s.timeline.filter{it.title.contains(q,true)||it.detail.contains(q,true)||it.type.contains(q,true)}){e->Card{Tag(e.type);Text(e.title,fontWeight=FontWeight.Bold);TextInfo(e.detail);TextInfo("${e.timestamp} • ${e.agentId?:"System"}")}}
  }
 }
-@Composable private fun Settings(base:String,token:String,live:Boolean,setBase:(String)->Unit,setToken:(String)->Unit,connect:()->Unit,disconnect:()->Unit,busy:Boolean)=ListPage("Connection"){
+@Composable private fun LanSettings(link:String,setLink:(String)->Unit,live:Boolean,pair:()->Unit,disconnect:()->Unit,busy:Boolean)=ListPage("Local Wi-Fi connection"){
  item{Card{
-  Text("Trusted HTTPS desktop gateway",fontWeight=FontWeight.Bold)
-  TextInfo("Use a private HTTPS tunnel or authenticated reverse proxy. Do not expose desktop localhost over public HTTP.")
-  OutlinedTextField(base,setBase,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("https://your-private-gateway")})
-  OutlinedTextField(token,setToken,modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Gateway token")},visualTransformation=PasswordVisualTransformation())
-  Button(onClick=connect,enabled=!busy&&base.startsWith("https://")&&token.isNotBlank()){Text("Connect securely")}
-  OutlinedButton(onClick=disconnect){Text("Disconnect / forget token")}
-  TextInfo(if(live)"Live data enabled" else "Disconnected or demo")
-  TextInfo("Credentials are encrypted with Android Keystore. Native authorization always remains on PhAize desktop.")
+  Text("Pair directly with PhAize",fontWeight=FontWeight.Bold)
+  TextInfo("No accounts, cloud relay, or port forwarding. Your phone and Windows computer must be on the same private Wi-Fi or local network.")
+  TextInfo("On Windows: Settings → Mobile & Local Network → Start server → Pair a new phone. Scan the QR code with your phone camera or paste the link below.")
+  OutlinedTextField(link,setLink,modifier=Modifier.fillMaxWidth(),label={Text("phaize://pair? …")},minLines=2,maxLines=4)
+  Button(onClick=pair,enabled=!busy&&link.startsWith("phaize://pair?"),modifier=Modifier.fillMaxWidth()){Text(if(busy)"Pairing…" else "Pair securely")}
+  TextInfo("The QR pins the desktop TLS certificate. Wrong certificates are rejected, even on the same Wi-Fi.")
+ }}
+ item{Card{
+  Text(if(live)"Connected to desktop" else "No active local connection",color=if(live)green else amber)
+  TextInfo("Monitoring only. Permission approvals, agent stop, and security policy modifications remain disabled until independently verified.")
+  OutlinedButton(onClick=disconnect){Text("Forget local connection")}
+  TextInfo("For immediate device revocation, use the Paired Phones section on PhAize Windows.")
  }}
 }

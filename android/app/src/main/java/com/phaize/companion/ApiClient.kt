@@ -4,14 +4,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import javax.net.ssl.HttpsURLConnection
 import java.net.URL
 import java.util.UUID
 
 class ApiClient {
+ var lanFingerprint:String?=null
  private suspend fun call(base:String,token:String,path:String,method:String="GET",payload:JSONObject?=null):String=withContext(Dispatchers.IO){
   val u=URL(base.trimEnd('/')+path)
   require(u.protocol=="https"&&u.userInfo==null&&u.host.isNotBlank()){ "Trusted HTTPS gateway required" }
-  val conn=u.openConnection() as HttpURLConnection
+  val conn=u.openConnection() as HttpsURLConnection
+  lanFingerprint?.let{PinnedLanTls.apply(conn,u.host,it)}
   try {
    conn.connectTimeout=8000;conn.readTimeout=12000;conn.requestMethod=method;conn.instanceFollowRedirects=false
    conn.setRequestProperty("Authorization","Bearer $token")
@@ -22,6 +25,17 @@ class ApiClient {
    if(status !in 200..299)throw IllegalStateException("HTTP $status: "+response.take(160))
    response
   }finally{conn.disconnect()}
+ }
+ suspend fun enroll(invite:LanInvitation):String {
+  val body=JSONObject().put("secret",invite.secret).put("name","Android companion")
+  val previous=lanFingerprint
+  return try {
+   lanFingerprint=invite.fingerprint
+   val result=JSONObject(call(invite.base,"","/v1/pair","POST",body))
+   val token=result.getString("token")
+   require(token.matches(Regex("[0-9a-f]{64}")) && result.optString("scope")=="read_only"){"Invalid desktop pairing response"}
+   token
+  }catch(error:Exception){lanFingerprint=previous;throw error}
  }
  suspend fun snapshot(base:String,token:String)=parseSnapshot(call(base,token,"/v1/snapshot"))
  suspend fun decide(base:String,token:String,a:Approval,approve:Boolean,deviceId:String):String {
