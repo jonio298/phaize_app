@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {createHash,timingSafeEqual} from 'node:crypto';
-const MAX_BODY=4096;
+const MAX_BODY=8192;
 const ID=/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const json=(res,status,obj)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'"});res.end(JSON.stringify(obj));};
 const validToken=(authorization,secret)=>{
@@ -21,6 +21,9 @@ const revision=n=>Number.isSafeInteger(n)&&n>=0;
 const OPAQUE=/^[a-zA-Z0-9_-]{1,128}$/;
 function validTask(d){return exact(d,['title','description','agentId','priority','deviceId','expectedRevision','requestId'])&&typeof d.title==='string'&&d.title.trim().length>=3&&d.title.length<=160&&typeof d.description==='string'&&d.description.length<=4000&&(d.agentId===null||(typeof d.agentId==='string'&&ID.test(d.agentId)))&&['low','normal','high'].includes(d.priority)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 
+function validChat(d){return exact(d,['message','deviceId','expectedRevision','requestId'])&&typeof d.message==='string'&&d.message.trim().length>0&&d.message.length<=4000&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
+function validGoal(d){return exact(d,['goal','instructions','priority','deviceId','expectedRevision','requestId'])&&typeof d.goal==='string'&&d.goal.trim().length>=3&&d.goal.length<=240&&typeof d.instructions==='string'&&d.instructions.length<=4000&&['low','normal','high'].includes(d.priority)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
+function validReview(d){return exact(d,['decision','deviceId','expectedRevision','requestId'])&&['request_changes','approve_review'].includes(d.decision)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validDecision(d){return exact(d,['decision','deviceId','expectedRevision','requestId'])&&['approve_once','deny'].includes(d.decision)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validControl(d){return exact(d,['action','deviceId','expectedRevision','requestId'])&&['start','pause','resume','emergency_stop'].includes(d.action)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validPolicy(d){return exact(d,['deviceId','expectedRevision','requestId','read','write','delete'])&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision)&&['allow','ask','deny'].includes(d.read)&&['ask','deny'].includes(d.write)&&['ask','deny'].includes(d.delete);}
@@ -64,27 +67,47 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
      if(outcome?.status&&outcome.status!=='ok')return json(res,resultStatus(outcome),{error:outcome.status});
      return json(res,200,{entries:Array.isArray(outcome?.entries)?outcome.entries.slice(0,200):[],nextCursor:outcome?.nextCursor??null});
    }
+   const readRoute=(url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/chat$/)&&'chat')||(url.pathname==='/v1/reviews'&&'reviews')||(url.pathname==='/v1/alerts'&&'alerts');
+   if(req.method==='GET'&&readRoute){
+     const keys=[...url.searchParams.keys()];
+     if(keys.some(k=>k!=='after')||keys.length>1)return json(res,400,{error:'invalid_query'});
+     const after=url.searchParams.get('after');
+     if(after!==null&&!OPAQUE.test(after))return json(res,400,{error:'invalid_cursor'});
+     const agentId=readRoute==='chat'?url.pathname.split('/')[3]:null;
+     const method=readRoute==='chat'?'chat':readRoute;
+     if(typeof adapter[method]!=='function')return json(res,503,{error:'native_'+method+'_unavailable'});
+     const outcome=await adapter[method]({agentId,after});
+     if(outcome?.status&&outcome.status!=='ok')return json(res,resultStatus(outcome),{error:outcome.status});
+     const list=readRoute==='chat'?'messages':readRoute==='reviews'?'reviews':'alerts';
+     return json(res,200,{[list]:Array.isArray(outcome?.[list])?outcome[list].slice(0,100):[],nextCursor:outcome?.nextCursor??null});
+   }
    const approval=url.pathname.match(/^\/v1\/approvals\/([a-zA-Z0-9_-]{1,80})\/decisions$/);
    const agent=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/control$/);
    const policy=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/permissions$/);
    const task=url.pathname==='/v1/tasks'&&req.method==='POST';
-   if(req.method==='POST'&&(approval||agent||policy||task)){
+   const goal=url.pathname==='/v1/goals'&&req.method==='POST';
+   const chat=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/chat$/);
+   const review=url.pathname.match(/^\/v1\/reviews\/([a-zA-Z0-9_-]{1,80})\/decision$/);
+   if(req.method==='POST'&&(approval||agent||policy||task||goal||chat||review)){
      if(req.headers['content-type']?.split(';')[0].trim()!=='application/json')return json(res,415,{error:'json_required'});
      const body=await parseBody(req);
-     if(!(approval?validDecision(body):policy?validPolicy(body):task?validTask(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
-     if((agent||policy||task)&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(!(approval?validDecision(body):policy?validPolicy(body):task?validTask(body):goal?validGoal(body):chat?validChat(body):review?validReview(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
+     if((agent||policy||task||goal||chat||review)&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(goal&&typeof adapter.createGoal!=='function')return json(res,503,{error:'native_goals_unavailable'});
+     if(chat&&typeof adapter.sendChat!=='function')return json(res,503,{error:'native_chat_unavailable'});
+     if(review&&typeof adapter.reviewDecision!=='function')return json(res,503,{error:'native_review_unavailable'});
      if(task&&typeof adapter.createTask!=='function')return json(res,503,{error:'native_tasks_unavailable'});
      if(policy&&typeof adapter.permissions!=='function')return json(res,503,{error:'native_permissions_unavailable'});
      if(agent&&typeof adapter.control!=='function')return json(res,503,{error:'native_control_unavailable'});
-     const target=task?'new':(approval??agent??policy)[1];
-     const scope=approval?'approval':policy?'policy':task?'task':'agent';
+     const target=(task||goal)?'new':(approval??agent??policy??chat??review)[1];
+     const scope=approval?'approval':policy?'policy':task?'task':goal?'goal':chat?'chat':review?'review':'agent';
      const fingerprint=createHash('sha256').update(JSON.stringify({scope,target,body})).digest('hex');
      const id=body.deviceId+':'+body.requestId;
      const prior=idempotent.get(id);
      if(prior){if(prior.fingerprint!==fingerprint)return json(res,409,{error:'idempotency_key_reused'});return json(res,prior.status,prior.payload);}
-     const command={...body,...(approval?{approvalId:target}:task?{}:{agentId:target})};
+     const command={...body,...(approval?{approvalId:target}:review?{reviewId:target}:(task||goal)?{}:{agentId:target})};
      // Native service must recheck authorization, revision, device, policy, scope and TTL.
-     const outcome=await (approval?adapter.decide(command):policy?adapter.permissions(command):task?adapter.createTask(command):adapter.control(command));
+     const outcome=await (approval?adapter.decide(command):policy?adapter.permissions(command):task?adapter.createTask(command):goal?adapter.createGoal(command):chat?adapter.sendChat(command):review?adapter.reviewDecision(command):adapter.control(command));
      const status=resultStatus(outcome);
      const payload=status===200?(outcome.result??{ok:true}):{error:outcome?.status??'unavailable'};
      if(status!==503){idempotent.set(id,{fingerprint,status,payload});if(idempotent.size>5000)idempotent.delete(idempotent.keys().next().value);}
