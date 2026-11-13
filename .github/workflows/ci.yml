@@ -28,7 +28,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle -p android :app:assembleDebug --no-daemon
+      - name: Build debug APK
+        run: |
+          set +e
+          gradle -p android :app:assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            # Surface Kotlin compiler errors as public annotations (full logs need a GitHub login).
+            grep -E '^e: ' build.log | head -10 | sed -E 's#^e: file://.*/(android/[^: ]+):([0-9]+):([0-9]+) (.*)$#::error file=\1,line=\2,col=\3::\4#'
+            all=$(grep -E '^e: ' build.log | head -40 | sed -E 's#^e: file://.*/(android/[^ ]+) (.*)$#\1 \2#' | cut -c1-300 | paste -sd '|' -)
+            echo "::error title=Kotlin compile errors::$all"
+          fi
+          exit $code
       - uses: actions/upload-artifact@v4
         with:
           name: phaize-mobile-debug-apk
