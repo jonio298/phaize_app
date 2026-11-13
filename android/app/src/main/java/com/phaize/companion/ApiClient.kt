@@ -28,6 +28,20 @@ class ApiClient {
   val p=JSONObject().put("decision",if(approve)"approve_once" else "deny").put("deviceId",deviceId).put("expectedRevision",a.revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/approvals/${a.id}/decisions","POST",p)
  }
+ suspend fun createTask(base:String,token:String,title:String,description:String,agentId:String?,priority:String,revision:Int,deviceId:String):String {
+  require(title.trim().length in 3..160 && description.length<=4000 && priority in listOf("low","normal","high"))
+  val p=JSONObject().put("title",title.trim()).put("description",description).put("agentId",agentId).put("priority",priority)
+   .put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/tasks","POST",p)
+ }
+ suspend fun browse(base:String,token:String,parentId:String?=null):BrowserPage {
+  val path="/v1/files/browse"+(if(parentId==null) "" else "?parent="+java.net.URLEncoder.encode(parentId,"UTF-8"))
+  return parseBrowserPage(call(base,token,path))
+ }
+ suspend fun errors(base:String,token:String,after:String?=null):ErrorPage {
+  val path="/v1/errors"+(if(after==null) "" else "?after="+java.net.URLEncoder.encode(after,"UTF-8"))
+  return parseErrorPage(call(base,token,path))
+ }
  suspend fun permissions(base:String,token:String,a:Agent,read:String,write:String,delete:String,revision:Int,deviceId:String):String {
   require(read in listOf("allow","ask","deny") && write in listOf("ask","deny") && delete in listOf("ask","deny"))
   val p=JSONObject().put("read",read).put("write",write).put("delete",delete).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
