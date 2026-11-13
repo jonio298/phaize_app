@@ -114,11 +114,11 @@ enum class SettingsSection(val title:String,val subtitle:String,val icon:ImageVe
  var scale by remember(prefs.textScale){mutableStateOf(prefs.textScale)}
  SectionHeader(Icons.Outlined.Palette,"Appearance","How the app looks on this phone")
  SettingGroup{
-  SettingRow("Colour theme","Colours the whole app: accents, glows and the navigation bar."){ThemeMenu(prefs.theme){prefs.setTheme(it)}}
-  SettingRow("Animations","Off removes motion and transitions everywhere."){SwitchControl(prefs.animations){prefs.setAnimations(it)}}
+  SettingRow("Colour theme","Colours the whole app: accents, glows and the navigation bar."){ThemeMenu(prefs.theme){prefs.changeTheme(it)}}
+  SettingRow("Animations","Off removes motion and transitions everywhere."){SwitchControl(prefs.animations){prefs.changeAnimations(it)}}
   SettingRow("Text size","Scales all text in the app.",last=true){
    Row(verticalAlignment=Alignment.CenterVertically){
-    Slider(scale,{scale=it},onValueChangeFinished={prefs.setTextScale(scale)},valueRange=.85f..1.3f,modifier=Modifier.width(120.dp),
+    Slider(scale,{scale=it},onValueChangeFinished={prefs.changeTextScale(scale)},valueRange=.85f..1.3f,modifier=Modifier.width(120.dp),
      colors=SliderDefaults.colors(thumbColor=Color.White,activeTrackColor=Pal.accent,inactiveTrackColor=Pal.accent.copy(alpha=.2f)))
     Text("${(scale*100).roundToInt()}%",color=Pal.text,modifier=Modifier.padding(start=8.dp))
    }

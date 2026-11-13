@@ -87,10 +87,10 @@ class UiPrefs(ctx:Context){
  var animations by mutableStateOf(p.getBoolean("animations",true)); private set
  var textScale by mutableStateOf(p.getFloat("textScale",1f).coerceIn(.85f,1.3f)); private set
  var theme by mutableStateOf(Theme.entries.firstOrNull{it.name==p.getString("theme",Theme.Hologram.name)}?:Theme.Hologram); private set
- fun setAnimations(v:Boolean){animations=v;p.edit().putBoolean("animations",v).apply()}
- fun setTextScale(v:Float){textScale=v.coerceIn(.85f,1.3f);p.edit().putFloat("textScale",textScale).apply()}
- fun setTheme(t:Theme){theme=t;Pal.useTheme(t);p.edit().putString("theme",t.name).apply()}
- fun reset(){setAnimations(true);setTextScale(1f);setTheme(Theme.Hologram)}
+ fun changeAnimations(v:Boolean){animations=v;p.edit().putBoolean("animations",v).apply()}
+ fun changeTextScale(v:Float){textScale=v.coerceIn(.85f,1.3f);p.edit().putFloat("textScale",textScale).apply()}
+ fun changeTheme(t:Theme){theme=t;Pal.useTheme(t);p.edit().putString("theme",t.name).apply()}
+ fun reset(){changeAnimations(true);changeTextScale(1f);changeTheme(Theme.Hologram)}
 }
 
 /** False when the owner turned animations off, or the system asks for no motion. */
