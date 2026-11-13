@@ -133,7 +133,7 @@ class MainActivity:ComponentActivity(){
  Card{
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.name,fontWeight=FontWeight.Bold);Tag(a.status,if(a.status=="working")green else accent)}
   TextInfo(a.role+" • "+(a.task?:"No active task"))
-  TextInfo("CPU ${a.cpu}%   RAM ${a.memoryMb} MB")
+  TextInfo(if(a.metricsAvailable)"CPU ${a.cpu}%   RAM ${a.memoryMb} MB" else "Resource metrics not connected")
   if(live) Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
    OutlinedButton(onClick={onControl(a,"pause")}){Text("Pause")}
    OutlinedButton(onClick={onControl(a,"resume")}){Text("Resume")}
@@ -142,11 +142,11 @@ class MainActivity:ComponentActivity(){
  }
 }
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage("Overview"){
- item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo("CPU ${s.host.cpu}%  •  Memory ${s.host.memoryPercent}%")}}
+ item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo(if(s.mode=="live")"Resource metrics not yet connected" else "Demo metrics only")}}
  item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(if(s.approvalsAvailable)s.approvals.size.toString() else "—",color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
  item{TextButton(onClick={go(Tab.Approvals)}){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration")}}
  items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
- item{TextInfo("Events: ${s.eventsToday}   •   Blocked: ${s.blockedToday}   •   Completed: ${s.completedToday}")}
+ item{TextInfo(if(s.mode=="live")"Recent recorded event sample: ${s.sampledEvents} (not full history)" else "Demo events: ${s.eventsToday}")}
 }
 @Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
  var q by remember{mutableStateOf("")}
