@@ -96,8 +96,8 @@ class MainActivity:ComponentActivity(){
    if(notice!=null)Card{Text(notice!!,color=amber,style=MaterialTheme.typography.bodySmall);TextButton(onClick={notice=null}){Text("Dismiss")}}
    when(tab){
     Tab.Home->Home(snapshot,{tab=it})
-    Tab.Agents->Agents(snapshot,live){a,action->agentPending=a to action}
-    Tab.Approvals->Approvals(snapshot,live){a,ok->approvalPending=a to ok}
+    Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
+    Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
     Tab.Files->Files(snapshot)
     Tab.History->History(snapshot)
     Tab.Settings->Settings(base,token,live,{base=it},{token=it},{
@@ -143,21 +143,22 @@ class MainActivity:ComponentActivity(){
 }
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage("Overview"){
  item{Card{Text(s.host.name,fontWeight=FontWeight.Bold);TextInfo("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");TextInfo("CPU ${s.host.cpu}%  •  Memory ${s.host.memoryPercent}%")}}
- item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.approvals.size.toString(),color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
- item{TextButton(onClick={go(Tab.Approvals)}){Text("Open pending approvals")}}
+ item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(s.agents.count{it.status!="idle"}.toString(),color=accent,style=MaterialTheme.typography.headlineMedium);TextInfo("Active agents")}};Surface(color=panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.weight(1f)){Column(Modifier.padding(12.dp)){Text(if(s.approvalsAvailable)s.approvals.size.toString() else "—",color=amber,style=MaterialTheme.typography.headlineMedium);TextInfo("Approvals")}}}}
+ item{TextButton(onClick={go(Tab.Approvals)}){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration")}}
  items(s.tasks){t->Card{Text(t.title,fontWeight=FontWeight.Bold);TextInfo("${t.agentId?:"Unassigned"} • ${t.status}");LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.fillMaxWidth())}}
  item{TextInfo("Events: ${s.eventsToday}   •   Blocked: ${s.blockedToday}   •   Completed: ${s.completedToday}")}
 }
 @Composable private fun Agents(s:Snapshot,live:Boolean,onControl:(Agent,String)->Unit){
  var q by remember{mutableStateOf("")}
  ListPage("Agents"){
+  if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=amber)}
   item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),label={Text("Find agent")})}
   items(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){a->AgentCard(a,live,onControl)}
  }
 }
 @Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage("Permission requests"){
- if(!live)item{Text("Demo data only; approvals disabled.",color=amber)}
- if(s.approvals.isEmpty())item{TextInfo("No pending approvals.")}
+ if(!live)item{Text("Native approvals are not connected. Remote decisions are disabled.",color=amber)}
+ if(live&&s.approvals.isEmpty())item{TextInfo("No pending approvals.")}
  items(s.approvals){a->Card{
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.title,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Tag(a.risk,if(a.risk=="critical")red else amber)}
   TextInfo(a.detail);Text(a.resource,color=accent,style=MaterialTheme.typography.bodySmall)
