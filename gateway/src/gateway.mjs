@@ -27,6 +27,18 @@ function validReview(d){return exact(d,['decision','deviceId','expectedRevision'
 function validDecision(d){return exact(d,['decision','deviceId','expectedRevision','requestId'])&&['approve_once','deny'].includes(d.decision)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validControl(d){return exact(d,['action','deviceId','expectedRevision','requestId'])&&['start','pause','resume','emergency_stop'].includes(d.action)&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision);}
 function validPolicy(d){return exact(d,['deviceId','expectedRevision','requestId','read','write','delete'])&&ID.test(d.deviceId??'')&&ID.test(d.requestId??'')&&revision(d.expectedRevision)&&['allow','ask','deny'].includes(d.read)&&['ask','deny'].includes(d.write)&&['ask','deny'].includes(d.delete);}
+function validOpsAction(d){
+ const base=['action','deviceId','expectedRevision','requestId'];
+ if(!d||typeof d!=='object'||!ID.test(d.deviceId??'')||!ID.test(d.requestId??'')||!revision(d.expectedRevision))return false;
+ switch(d.action){
+  case 'lockdown':return exact(d,base.concat('reason'))&&typeof d.reason==='string'&&d.reason.trim().length>=8&&d.reason.length<=240;
+  case 'limits':return exact(d,base.concat('agentId','cpuPercent','memoryMb','network'))&&ID.test(d.agentId??'')&&Number.isSafeInteger(d.cpuPercent)&&d.cpuPercent>=10&&d.cpuPercent<=100&&Number.isSafeInteger(d.memoryMb)&&d.memoryMb>=256&&d.memoryMb<=65536&&['off','restricted','policy'].includes(d.network);
+  case 'terminal_preset':return exact(d,base.concat('agentId','commandId'))&&ID.test(d.agentId??'')&&['git_status','git_diff_stat','run_tests'].includes(d.commandId);
+  case 'checkpoint_restore':return exact(d,base.concat('checkpointId'))&&ID.test(d.checkpointId??'');
+  case 'capture':return exact(d,base.concat('target'))&&d.target==='phaize_window';
+  default:return false;
+ }
+}
 function resultStatus(outcome){return {ok:200,not_found:404,expired:410,conflict:409,forbidden:403,unavailable:503}[outcome?.status]??503;}
 export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
  if(!adapter||typeof adapter.snapshot!=='function'||typeof adapter.decide!=='function')throw Error('desktop adapter required');
@@ -81,6 +93,20 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
      const list=readRoute==='chat'?'messages':readRoute==='reviews'?'reviews':'alerts';
      return json(res,200,{[list]:Array.isArray(outcome?.[list])?outcome[list].slice(0,100):[],nextCursor:outcome?.nextCursor??null});
    }
+   if(req.method==='GET'&&url.pathname==='/v1/ops'){
+     if(url.search)return json(res,400,{error:'invalid_query'});
+     if(typeof adapter.ops!=='function')return json(res,503,{error:'native_ops_unavailable'});
+     const result=await adapter.ops();
+     if(result?.status&&result.status!=='ok')return json(res,resultStatus(result),{error:result.status});
+     return json(res,200,{
+       health:result?.health??null,
+       git:result?.git??null,
+       checkpoints:Array.isArray(result?.checkpoints)?result.checkpoints.slice(0,30):[],
+       captures:Array.isArray(result?.captures)?result.captures.slice(0,10):[],
+       terminalHistory:Array.isArray(result?.terminalHistory)?result.terminalHistory.slice(0,30):[]
+     });
+   }
+   const opsAction=url.pathname==='/v1/ops/action'&&req.method==='POST';
    const approval=url.pathname.match(/^\/v1\/approvals\/([a-zA-Z0-9_-]{1,80})\/decisions$/);
    const agent=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/control$/);
    const policy=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/permissions$/);
@@ -88,26 +114,27 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
    const goal=url.pathname==='/v1/goals'&&req.method==='POST';
    const chat=url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/chat$/);
    const review=url.pathname.match(/^\/v1\/reviews\/([a-zA-Z0-9_-]{1,80})\/decision$/);
-   if(req.method==='POST'&&(approval||agent||policy||task||goal||chat||review)){
+   if(req.method==='POST'&&(approval||agent||policy||task||goal||chat||review||opsAction)){
      if(req.headers['content-type']?.split(';')[0].trim()!=='application/json')return json(res,415,{error:'json_required'});
      const body=await parseBody(req);
-     if(!(approval?validDecision(body):policy?validPolicy(body):task?validTask(body):goal?validGoal(body):chat?validChat(body):review?validReview(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
-     if((agent||policy||task||goal||chat||review)&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(!(approval?validDecision(body):policy?validPolicy(body):task?validTask(body):goal?validGoal(body):chat?validChat(body):review?validReview(body):opsAction?validOpsAction(body):validControl(body)))return json(res,400,{error:'invalid_payload'});
+     if((agent||policy||task||goal||chat||review||opsAction)&&!allowControl)return json(res,403,{error:'controls_disabled'});
+     if(opsAction&&typeof adapter.opsAction!=='function')return json(res,503,{error:'native_ops_unavailable'});
      if(goal&&typeof adapter.createGoal!=='function')return json(res,503,{error:'native_goals_unavailable'});
      if(chat&&typeof adapter.sendChat!=='function')return json(res,503,{error:'native_chat_unavailable'});
      if(review&&typeof adapter.reviewDecision!=='function')return json(res,503,{error:'native_review_unavailable'});
      if(task&&typeof adapter.createTask!=='function')return json(res,503,{error:'native_tasks_unavailable'});
      if(policy&&typeof adapter.permissions!=='function')return json(res,503,{error:'native_permissions_unavailable'});
      if(agent&&typeof adapter.control!=='function')return json(res,503,{error:'native_control_unavailable'});
-     const target=(task||goal)?'new':(approval??agent??policy??chat??review)[1];
-     const scope=approval?'approval':policy?'policy':task?'task':goal?'goal':chat?'chat':review?'review':'agent';
+     const target=opsAction?body.action:(task||goal)?'new':(approval??agent??policy??chat??review)[1];
+     const scope=opsAction?'ops':approval?'approval':policy?'policy':task?'task':goal?'goal':chat?'chat':review?'review':'agent';
      const fingerprint=createHash('sha256').update(JSON.stringify({scope,target,body})).digest('hex');
      const id=body.deviceId+':'+body.requestId;
      const prior=idempotent.get(id);
      if(prior){if(prior.fingerprint!==fingerprint)return json(res,409,{error:'idempotency_key_reused'});return json(res,prior.status,prior.payload);}
-     const command={...body,...(approval?{approvalId:target}:review?{reviewId:target}:(task||goal)?{}:{agentId:target})};
+     const command={...body,...(approval?{approvalId:target}:review?{reviewId:target}:(task||goal||opsAction)?{}:{agentId:target})};
      // Native service must recheck authorization, revision, device, policy, scope and TTL.
-     const outcome=await (approval?adapter.decide(command):policy?adapter.permissions(command):task?adapter.createTask(command):goal?adapter.createGoal(command):chat?adapter.sendChat(command):review?adapter.reviewDecision(command):adapter.control(command));
+     const outcome=await (approval?adapter.decide(command):policy?adapter.permissions(command):task?adapter.createTask(command):goal?adapter.createGoal(command):chat?adapter.sendChat(command):review?adapter.reviewDecision(command):opsAction?adapter.opsAction(command):adapter.control(command));
      const status=resultStatus(outcome);
      const payload=status===200?(outcome.result??{ok:true}):{error:outcome?.status??'unavailable'};
      if(status!==503){idempotent.set(id,{fingerprint,status,payload});if(idempotent.size>5000)idempotent.delete(idempotent.keys().next().value);}
