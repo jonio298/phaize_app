@@ -16,6 +16,12 @@ A phone-first Android companion and local-first Node.js gateway for PhAize deskt
 - Demo adapter, optional desktop-bridge adapter, bounded event polling endpoint.
 - CI definitions for Node gateway tests and Android debug build.
 
+## Advanced remote console (draft)
+
+Android **More → Remote** now includes native-gated emergency lockdown, per-agent CPU/memory/network limits, Git status, approved command catalog, checkpoint restore requests, and redacted preview metadata. All remote actions require authorization from the native desktop bridge; demo mode cannot execute them.
+
+The remote terminal deliberately accepts catalog command IDs, not arbitrary shell commands. See `docs/DESKTOP_BRIDGE_CONTRACT.md` and desktop integration issue https://github.com/jonio298/phaize/issues/6.
+
 ## Important: what is NOT completed
 
 The real PhAize desktop IPC bridge is **not implemented in this repository**. The desktop must provide `/mobile/v1/snapshot`, `/mobile/v1/approvals/decisions`, `/mobile/v1/agent-control`, `/mobile/v1/agent-permissions`, `/mobile/v1/tasks`, `/mobile/v1/files/browse`, `/mobile/v1/errors`, `/mobile/v1/agents/:agentId/chat`, `/mobile/v1/agent-chat`, `/mobile/v1/goals`, `/mobile/v1/reviews`, `/mobile/v1/reviews/decision` and `/mobile/v1/alerts` through a loopback-only authenticated service. All remote actions must be checked by PhAize native enforcement, including MXC, leases, revisions, expiration, scope and device authorization.

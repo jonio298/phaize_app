@@ -87,6 +87,8 @@ class MainActivity:ComponentActivity(){
  var chatPage by remember{mutableStateOf<ChatPage?>(null)}
  var reviewPage by remember{mutableStateOf<ReviewPage?>(null)}
  var alertPage by remember{mutableStateOf<AlertPage?>(null)}
+ var remoteConsole by remember{mutableStateOf<RemoteConsole?>(null)}
+ var remoteBusy by remember{mutableStateOf(false)}
  var chatAgentId by remember{mutableStateOf<String?>(null)}
  var extraBusy by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
@@ -100,6 +102,7 @@ class MainActivity:ComponentActivity(){
  LaunchedEffect(tab,workView,securityView,moreView,live,base,chatAgentId){
   if(live){
    if(tab==Tab.More&&moreView=="Files"){loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){browserPage=null;notice="File browser: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
+   if(tab==Tab.More&&moreView=="Remote"){remoteBusy=true;try{remoteConsole=api.remoteConsole(base,token)}catch(e:Exception){remoteConsole=null;notice="Remote: "+(e.message?:"unavailable")}finally{remoteBusy=false}}
    if(tab==Tab.More&&moreView=="Logs"){loadingExtra=true;try{errorsPage=api.errors(base,token)}catch(e:Exception){errorsPage=null;notice="Error log: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
    if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null){extraBusy=true;try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){chatPage=null;notice="Chat: "+(e.message?:"unavailable")}finally{extraBusy=false}}
    if(tab==Tab.Work&&workView=="Reviews"){extraBusy=true;try{reviewPage=api.reviews(base,token)}catch(e:Exception){reviewPage=null;notice="Reviews: "+(e.message?:"unavailable")}finally{extraBusy=false}}
@@ -129,7 +132,7 @@ class MainActivity:ComponentActivity(){
    Column{Text("PhAize",fontWeight=FontWeight.ExtraBold,style=MaterialTheme.typography.headlineSmall,color=accent)
      Text(if(live)"LIVE • Desktop connected" else "DEMO / OFFLINE",color=if(live)green else amber,style=MaterialTheme.typography.labelSmall)}
    Row{
-    IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Security&&securityView=="Alerts")try{alertPage=api.alerts(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null)try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Reviews")try{reviewPage=api.reviews(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Logs")try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Files")try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+    IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Security&&securityView=="Alerts")try{alertPage=api.alerts(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null)try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Reviews")try{reviewPage=api.reviews(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Remote")try{remoteConsole=api.remoteConsole(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Logs")try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Files")try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
     IconButton(onClick={tab=Tab.More;moreView="Settings"}){Icon(Icons.Outlined.Settings,"Connection settings",tint=accent)}
    }
   }
@@ -177,14 +180,15 @@ class MainActivity:ComponentActivity(){
      }
     }
     Tab.More->Column{
-     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Files","Logs","Settings").forEach{v->FilterChip(selected=moreView==v,onClick={moreView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
+     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Remote","Files","Logs","Settings").forEach{v->FilterChip(selected=moreView==v,onClick={moreView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
      Box(Modifier.weight(1f)){
       when(moreView){
+       "Remote"->RemoteConsoleScreen(live,remoteBusy,remoteConsole,{scope.launch{remoteBusy=true;try{remoteConsole=api.remoteConsole(base,token)}catch(e:Exception){notice="Remote: "+(e.message?:"unavailable")}finally{remoteBusy=false}}},{action,fields->scope.launch{remoteBusy=true;try{api.remoteAction(base,token,action,remoteConsole?.revision?:snapshot.revision,deviceId,fields);remoteConsole=api.remoteConsole(base,token);notice="Desktop accepted remote request: $action"}catch(e:Exception){notice="Remote request failed: "+(e.message?:"unavailable")}finally{remoteBusy=false}}})
        "Files"->FileCenterScreen(snapshot,live,browserPage,fileStack,loadingExtra,{id->fileStack=fileStack+id;scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,id)}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}},{fileStack=fileStack.dropLast(1);scope.launch{loadingExtra=true;try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message?:"Browse unavailable"}finally{loadingExtra=false}}})
        "Logs"->LogCenterScreen(snapshot,live,errorsPage,loadingExtra)
        "Settings"->Settings(base,token,live,{base=it},{token=it},{
         scope.launch{busy=true;try{val result=api.snapshot(base,token);snapshot=result;live=result.mode=="live";if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}else notice="Demo gateway: real controls disabled"}catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-       },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;fileStack=emptyList();notice="Connection removed"},busy)
+       },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;remoteConsole=null;fileStack=emptyList();notice="Connection removed"},busy)
       }
      }
     }

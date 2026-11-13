@@ -60,3 +60,22 @@ fun parseAlertPage(raw:String):AlertPage {
  val o=JSONObject(raw)
  return AlertPage(o.items("alerts"){AlertItem(it.s("id"),it.s("severity"),it.s("title"),it.s("message"),it.s("timestamp"),it.n("agentId"))},o.n("nextCursor"))
 }
+
+data class RemoteResource(val agentId:String,val agentName:String,val cpuPercent:Int,val memoryMb:Int,val networkMode:String)
+data class RemoteCommand(val id:String,val label:String,val description:String)
+data class RemoteCheckpoint(val id:String,val title:String,val createdAt:String,val detail:String)
+data class RemoteGit(val branch:String,val dirty:Boolean,val ahead:Int,val behind:Int,val summary:String)
+data class RemotePreview(val status:String,val capturedAt:String,val description:String)
+data class RemoteConsole(val revision:Int,val locked:Boolean,val resources:List<RemoteResource>,val commands:List<RemoteCommand>,val checkpoints:List<RemoteCheckpoint>,val git:RemoteGit?,val preview:RemotePreview?)
+fun parseRemoteConsole(raw:String):RemoteConsole {
+ val o=JSONObject(raw)
+ val git=o.optJSONObject("git")
+ val preview=o.optJSONObject("preview")
+ return RemoteConsole(o.optInt("revision"),o.optBoolean("locked"),
+  o.items("resources"){RemoteResource(it.s("agentId"),it.s("agentName"),it.optInt("cpuPercent"),it.optInt("memoryMb"),it.s("networkMode"))},
+  o.items("commands"){RemoteCommand(it.s("id"),it.s("label"),it.s("description"))},
+  o.items("checkpoints"){RemoteCheckpoint(it.s("id"),it.s("title"),it.s("createdAt"),it.s("detail"))},
+  git?.let{RemoteGit(it.s("branch"),it.optBoolean("dirty"),it.optInt("ahead"),it.optInt("behind"),it.s("summary"))},
+  preview?.let{RemotePreview(it.s("status"),it.s("capturedAt"),it.s("description"))}
+ )
+}

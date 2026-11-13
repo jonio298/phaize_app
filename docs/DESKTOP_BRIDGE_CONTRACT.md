@@ -73,3 +73,33 @@ GET `/mobile/v1/alerts?after=<opaque-cursor>` returns `{"alerts":[{"id":"alert_1
 ## Network
 
 Android -> private HTTPS tunnel -> local gateway (127.0.0.1:8787) -> local PhAize bridge (127.0.0.1:8790 or named pipe) -> existing native coordinator/broker/MXC.
+
+## Advanced remote console (new Android feature branch)
+
+**GET /mobile/v1/remote/console** returns only authorized, redacted status metadata:
+
+```json
+{
+ "status":"ok","revision":12,"locked":false,
+ "resources":[{"agentId":"codex","agentName":"Codex","cpuPercent":50,"memoryMb":2048,"networkMode":"restricted"}],
+ "commands":[{"id":"tests","label":"Run approved tests","description":"Bounded test task in current workspace"}],
+ "checkpoints":[{"id":"cp_12","title":"Before refactor","createdAt":"2026-11-13T12:00:00Z","detail":"User-created workspace checkpoint"}],
+ "git":{"branch":"main","dirty":true,"ahead":0,"behind":0,"summary":"2 changed files"},
+ "preview":{"status":"redacted","capturedAt":"2026-11-13T12:00:00Z","description":"Sensitive windows omitted"}
+}
+```
+
+**POST /mobile/v1/remote/actions** requires `deviceId`, `requestId`, `expectedRevision`, `action`, and exactly these action-specific fields:
+
+| action | required extra fields | native behavior |
+| --- | --- | --- |
+| `lockdown` | `reason` (8–240 chars) | Emergency restrict sessions using native coordinator/MXC, atomic audit |
+| `run_command` | `commandId` | Resolve a desktop-published command catalog ID; never run phone-supplied shell |
+| `restore_checkpoint` | `checkpointId` | Confirm workspace identity, restore capability and lease; audit, guard destructive restoration |
+| `set_limits` | `agentId`, `cpuPercent` 5–100, `memoryMb` 256–32768, `networkMode` off/restricted/standard | Check desktop policy floors and native process/containment limits |
+| `capture_preview` | none | Produce only redacted preview metadata until image transport with explicit consent is designed |
+| `refresh_git` | none | Read-only Git status under fixed workspace; cannot change branch or commit |
+
+All changes must be performed only by native authorized handlers, never the relay. A mobile shared bearer token is development-only and **not sufficient for production device authorization**. Recheck revocation, user identity, scope, host revision, rate limits, request replay, and durable audit per operation. A lockdown must not be reported as successful if native enforcement did not confirm it. Sensitive logs, source code, raw screenshots, unrestricted terminal commands and arbitrary paths must never be sent to this API. Deny destructive rollback if workspace is dirty unless desktop explicitly obtains fresh user approval. Preserve a usable local emergency stop when phone connectivity is lost.
+
+**Status:** Android and gateway clients are implemented. The native PhAize desktop endpoints listed here are not implemented in this mobile repository.
