@@ -28,7 +28,7 @@ export function createDesktopAdapter({bridgeUrl,bridgeToken,fetchImpl=fetch}={})
     async alerts({after}){try{return await invoke('/mobile/v1/alerts'+(after?'?after='+encodeURIComponent(after):''));}catch{return FAIL;}},
     async sendChat(request){try{return await invoke('/mobile/v1/agent-chat','POST',request);}catch{return FAIL;}},
     async createGoal(request){try{return await invoke('/mobile/v1/goals','POST',request);}catch{return FAIL;}},
-    async reviewDecision(request){try{return await invoke('/mobile/v1/reviews/decision','POST',request);}catch{return FAIL;},
+    async reviewDecision(request){try{return await invoke('/mobile/v1/reviews/decision','POST',request);}catch{return FAIL;}},
     async ops(){try{return await invoke('/mobile/v1/ops');}catch{return FAIL;}},
     async opsAction(request){try{return await invoke('/mobile/v1/ops/action','POST',request);}catch{return FAIL;}}
 
