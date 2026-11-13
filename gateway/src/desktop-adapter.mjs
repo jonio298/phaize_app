@@ -9,14 +9,14 @@ export function createDesktopAdapter({bridgeUrl,bridgeToken,fetchImpl=fetch}={})
     const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),7500);
     try{
       const response=await fetchImpl(bridgeUrl+path,{method,signal:controller.signal,headers:{'authorization':'Bearer '+bridgeToken,'content-type':'application/json'},body:payload?JSON.stringify(payload):undefined,redirect:'error'});
-      if(!response.ok) throw Error('desktop bridge unavailable');
       const result=await response.json();
+      if(!response.ok && !(response.status===403 && result?.status==='forbidden')) throw Error('desktop bridge unavailable');
       if(!result || typeof result!=='object' || Array.isArray(result)) throw Error('invalid desktop response');
       return result;
     }finally{clearTimeout(timeout);}
   }
   return {
-    async snapshot(){try{const state=await invoke('/mobile/v1/snapshot');return {...state,mode:'live'};}catch{throw Error('Desktop not available; remote state cannot be trusted');}},
+    async snapshot(){try{const state=await invoke('/mobile/v1/snapshot');if(state.schemaVersion!==1 || state.mode!=='live' || !state.host || !Array.isArray(state.agents) || !Array.isArray(state.files) || !Array.isArray(state.timeline) || !Array.isArray(state.approvals) || !Array.isArray(state.tasks)) throw Error('invalid desktop snapshot');return state;}catch{throw Error('Desktop not available; remote state cannot be trusted');}},
     async decide(request){try{return await invoke('/mobile/v1/approvals/decisions','POST',request);}catch{return FAIL;}},
     async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}}
   };
