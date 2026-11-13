@@ -23,6 +23,15 @@
 - [ ] Pagination and virtualization for long event histories.
 - [ ] Multiple workspace/host profiles.
 
+## Phase C2 — Advanced mobile operations
+- [x] Android operations screen: health, Git summary, checkpoint requests, capture requests, resource policy and safe command presets.
+- [x] Validated gateway transport and missing-native fail-closed errors for advanced tools.
+- [x] Native contract for lockdown, limits, allowlisted command presets and two-phase checkpoint recovery.
+- [ ] Native PhAize Windows bridge implementations and real MXC-enforced command registry.
+- [ ] Actual redacted image-pixel retrieval and audited display for window captures.
+- [ ] Background notification delivery, persistent pairing and credential revocation.
+- [ ] On-device integration tests for every control, agent, host restart and monitoring fault.
+
 ## Phase D — Live delivery
 - [x] Periodic polling and revision-based events endpoint.
 - [ ] Persistent SSE/WebSocket transport with bounded replay cursors.
