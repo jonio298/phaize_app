@@ -54,8 +54,8 @@ private enum class Tab(val title:String,val subtitle:String,val short:String,val
  Agents("Agents","Who is working, and on what","Agents",Icons.Outlined.SmartToy),
  Approvals("Approvals","Permission requests waiting for you","Approve",Icons.Outlined.VerifiedUser),
  Chats("Chats","Read agent conversations","Chats",Icons.Outlined.ChatBubbleOutline),
- Files("Files","Recent file activity","Files",Icons.Outlined.FolderOpen),
- History("History","Timeline and changelog","History",Icons.Outlined.History),
+ Tasks("Tasks","What is planned, running and stuck","Tasks",Icons.Outlined.Checklist),
+ Log("Log","Timeline, files, changelog and handoffs","Log",Icons.Outlined.History),
  Settings("Settings","How the app looks and connects","Settings",Icons.Outlined.Settings)
 }
 /** Nothing is shown as live until a paired desktop answers: no sample agents, files, approvals or events. */
@@ -134,6 +134,7 @@ class MainActivity:ComponentActivity(){
  var chatsSupported by remember{mutableStateOf(true)}
  var notice by remember{mutableStateOf<String?>(null)}
  var busy by remember{mutableStateOf(false)}
+ var docs by remember{mutableStateOf(DocsView(false,emptyList(),emptyList()))}
  var chatList by remember{mutableStateOf(ChatList(false,emptyList()))}
  var openChat by remember{mutableStateOf<ChatSummary?>(null)}
  var chatMessages by remember{mutableStateOf<List<ChatMessage>>(emptyList())}
@@ -157,11 +158,14 @@ class MainActivity:ComponentActivity(){
   // Keep polling while a paired desktop is configured, so a dropped connection recovers by itself.
   while(base.isNotBlank()&&token.isNotBlank()&&api.lanFingerprint!=null){delay(8000);refresh()}
  }
- LaunchedEffect(connected){if(!connected){chatList=ChatList(false,emptyList());chatMessages=emptyList();openChat=null}}
+ LaunchedEffect(connected){if(!connected){docs=DocsView(false,emptyList(),emptyList());chatList=ChatList(false,emptyList());chatMessages=emptyList();openChat=null}}
  LaunchedEffect(connected,tab,openChat?.id){
   if(connected&&tab==Tab.Chats){
-   while(true){refreshChats();if(!chatsSupported)break;openChat?.let{refreshChat(it.id)};delay(8000)}
+   while(true){refreshChats();if(!chatsSupported)break;openChat?.let{refreshChat(it.id)};delay(if(openChat!=null)4000 else 6000)}
   }
+ }
+ LaunchedEffect(connected,tab){
+  if(connected&&tab==Tab.Log){while(true){try{docs=api.docs(base,token)}catch(e:Exception){val m=e.message?:"";if(!m.startsWith("HTTP 404")&&!m.startsWith("HTTP 503"))notice="Log unavailable: "+m.ifBlank{"offline"}};delay(10000)}}
  }
  val shownMessages=if(connected&&chatsSupported)chatMessages else emptyList()
  val chatBanner=when{!connected->"Not connected. Pair with your PC in Settings to read chats.";!chatsSupported->"This desktop does not share chats with the phone yet.";else->null}
@@ -187,9 +191,9 @@ class MainActivity:ComponentActivity(){
       Tab.Home->Home(snapshot,{tab=it})
       Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
       Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
-      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,{c->chatMessages=emptyList();openChat=c},{openChat=null})
-      Tab.Files->Files(snapshot)
-      Tab.History->History(snapshot)
+      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,chatList.chats.filter{it.working}.map{it.id}.toSet(),{c->chatMessages=emptyList();openChat=c},{openChat=null})
+      Tab.Tasks->TasksPage(snapshot)
+      Tab.Log->LogPage(snapshot,docs,{Files(it)},{History(it)})
       Tab.Settings->SettingsPage(prefs,pairingLink,{pairingLink=it},live,busy,{
         scope.launch{
          busy=true
@@ -281,6 +285,11 @@ class MainActivity:ComponentActivity(){
  var q by remember{mutableStateOf("")}
  ListPage{
   if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=Pal.amber,style=MaterialTheme.typography.bodySmall)}
+  val working=s.liveAgents.filter{it.working}
+  if(working.isNotEmpty())item{Glass(Modifier.enter(0)){
+   Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){LiveDot(true);Text("Working now",color=Pal.green,fontWeight=FontWeight.Bold)}
+   working.forEach{w->Column{Text(w.name,color=Pal.text,fontWeight=FontWeight.SemiBold);Info(w.step?:w.status)}}
+  }}
   item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Find agent")},colors=fieldColors())}
   itemsIndexed(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){i,a->AgentCard(i,a,live,onControl)}
  }

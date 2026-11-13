@@ -87,7 +87,7 @@ private fun agentColour(agentId:String):Color=when(agentId){"codex"->Color(0xFF7
    Column(Modifier.weight(1f)){
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
      Text(c.title,color=Pal.text,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,fill=false))
-     Info(shortTime(c.updatedAt))
+     if(c.working)Tag("Working",Pal.green) else Info(shortTime(c.updatedAt))
     }
     Text(c.preview,color=Pal.muted,style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
     Info("${c.messageCount} message${if(c.messageCount==1)"" else "s"}")
@@ -133,7 +133,7 @@ private fun agentColour(agentId:String):Color=when(agentId){"codex"->Color(0xFF7
  }
 }
 
-@Composable private fun Conversation(chat:ChatSummary,messages:List<ChatMessage>,loading:Boolean,onBack:()->Unit){
+@Composable private fun Conversation(chat:ChatSummary,messages:List<ChatMessage>,loading:Boolean,working:Boolean,onBack:()->Unit){
  BackHandler(onBack=onBack)
  val state=rememberLazyListState()
  LaunchedEffect(messages.size){if(messages.isNotEmpty())state.animateScrollToItem(messages.size)}
@@ -143,7 +143,7 @@ private fun agentColour(agentId:String):Color=when(agentId){"codex"->Color(0xFF7
    Avatar(chat.title,agentColour(chat.agentId))
    Column(Modifier.padding(start=10.dp)){
     Text(chat.title,color=Pal.text,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
-    Info(if(loading)"Updating…" else "Read only")
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){if(working){LiveDot(true);Text("Working now",color=Pal.green,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold)}else Info(if(loading)"Updating…" else "Read only")}
    }
   }
   LazyColumn(Modifier.fillMaxSize(),state=state,contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
@@ -154,14 +154,14 @@ private fun agentColour(agentId:String):Color=when(agentId){"codex"->Color(0xFF7
 }
 
 /** The chats tab: a list of conversations, then a read-only conversation view that slides in. */
-@Composable fun ChatsPage(banner:String?,chats:List<ChatSummary>,open:ChatSummary?,messages:List<ChatMessage>,loading:Boolean,onOpen:(ChatSummary)->Unit,onBack:()->Unit){
+@Composable fun ChatsPage(banner:String?,chats:List<ChatSummary>,open:ChatSummary?,messages:List<ChatMessage>,loading:Boolean,workingIds:Set<String>,onOpen:(ChatSummary)->Unit,onBack:()->Unit){
  val on=LocalAnim.current
  AnimatedContent(targetState=open,transitionSpec={
   if(!on)EnterTransition.None togetherWith ExitTransition.None
   else if(targetState!=null)(fadeIn(tween(240))+slideInHorizontally(tween(300,easing=FastOutSlowInEasing)){it/6}) togetherWith (fadeOut(tween(140))+slideOutHorizontally(tween(260)){-it/8})
   else (fadeIn(tween(240))+slideInHorizontally(tween(300,easing=FastOutSlowInEasing)){-it/6}) togetherWith (fadeOut(tween(140))+slideOutHorizontally(tween(260)){it/8})
  },label="chat"){current->
-  if(current!=null)Conversation(current,messages,loading,onBack)
+  if(current!=null)Conversation(current,messages,loading,current.id in workingIds,onBack)
   else LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
    if(banner!=null)item{Glass(Modifier.enter(0)){Text(banner,color=Pal.amber,style=MaterialTheme.typography.bodySmall)}}
    if(chats.isEmpty())item{Info("No conversations to show.")}
