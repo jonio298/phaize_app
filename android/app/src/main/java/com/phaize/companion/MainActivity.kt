@@ -166,7 +166,7 @@ class MainActivity:ComponentActivity(){
   TextInfo(a.role+" • "+(a.task?:"No active task"))
   TextInfo("CPU ${a.cpu}%   RAM ${a.memoryMb} MB")
   if(live){
-   Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+   Row(modifier=Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
     OutlinedButton(onClick={onControl(a,"start")},enabled=a.status in listOf("idle","stopped","exited")){Text("Start")}
     OutlinedButton(onClick={onControl(a,"pause")},enabled=a.status !in listOf("paused","stopped","idle","exited")){Text("Pause")}
     OutlinedButton(onClick={onControl(a,"resume")},enabled=a.status=="paused"){Text("Resume")}
