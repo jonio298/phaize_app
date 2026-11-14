@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
+import org.json.JSONObject
 
 private enum class Tab(val title:String,val subtitle:String,val short:String,val icon:ImageVector){
  Home("Overview","What your agents are doing","Home",Icons.Outlined.Dashboard),
@@ -149,9 +150,21 @@ class MainActivity:ComponentActivity(){
  var chatLoading by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
+ var taskPending by remember{mutableStateOf<WorkTask?>(null)}
  suspend fun refresh(){
   try{val new=api.snapshot(base,token);snapshot=new;connected=true;live=new.mode=="live";if(!live)notice="Desktop did not confirm a live session" else notice=null}
   catch(e:Exception){live=false;connected=false;snapshot=snapshot.copy(agents=emptyList(),tasks=emptyList(),files=emptyList(),timeline=emptyList(),approvals=emptyList());notice="Local connection unavailable: "+(e.message?:"offline")}
+ }
+ /** Waits for the desktop to say what happened to a request this phone just made, and shows the answer. */
+ suspend fun follow(response:String){
+  val id=try{JSONObject(response).optString("requestId")}catch(_:Exception){""}
+  if(id.isBlank()){notice="Request sent";return}
+  repeat(20){
+   delay(750)
+   val found=try{api.requests(base,token).firstOrNull{it.id==id}}catch(_:Exception){null}
+   if(found!=null&&found.status!="pending"){notice=(if(found.status=="done")"Done: " else "Not done: ")+found.message;refresh();return}
+  }
+  notice="Still waiting for the desktop to answer"
  }
  suspend fun refreshChats(){
   try{chatList=api.chats(base,token);chatsSupported=true}
@@ -212,12 +225,20 @@ class MainActivity:ComponentActivity(){
       Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
       Tab.Work->Segments(listOf("Tasks","Chats","Briefing","Builds","Reviews","Goals"),workView,{workView=it}){
        when(workView){
-        "Chats"->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,chatList.chats.filter{it.working}.map{it.id}.toSet(),{c->chatMessages=emptyList();openChat=c},{openChat=null})
+        "Chats"->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,chatList.chats.filter{it.working}.map{it.id}.toSet(),
+          if(live&&snapshot.controlsAvailable){c,text->scope.launch{
+           val target=if(c.id=="room")"room" else snapshot.liveAgents.getOrNull((c.id.removePrefix("agent").toIntOrNull()?:0)-1)?.id
+           if(target.isNullOrBlank()){notice="That agent is not available to message"}
+           else try{follow(api.say(base,token,target,text))}catch(e:Exception){notice=e.message}
+          };Unit} else null,
+          {c->chatMessages=emptyList();openChat=c},{openChat=null})
         "Briefing"->BriefingScreen(connected,extraBusy,briefingPage,{workView="Briefing"})
         "Builds"->BuildMonitorScreen(connected,extraBusy,buildFeed,{workView="Builds"})
-        "Reviews"->ControlsOff{CodeReviewScreen(false,extraBusy,reviewPage,{_,_->})}
-        "Goals"->ControlsOff{GoalScreen(false,false,{_,_,_->})}
-        else->TasksPage(snapshot)
+        "Reviews"->if(live&&snapshot.controlsAvailable)CodeReviewScreen(true,extraBusy,reviewPage,{r,d->scope.launch{try{follow(api.reviewDecision(base,token,r.id,d,r.revision,deviceId))}catch(e:Exception){notice=e.message}};Unit})
+         else ControlsOff{CodeReviewScreen(false,extraBusy,reviewPage,{_,_->})}
+        "Goals"->if(live&&snapshot.controlsAvailable)GoalScreen(true,busy,{g,i,p->scope.launch{try{follow(api.createGoal(base,token,g,i,p,snapshot.revision,deviceId))}catch(e:Exception){notice=e.message}};Unit})
+         else ControlsOff{GoalScreen(false,false,{_,_,_->})}
+        else->TasksPage(snapshot,if(live&&snapshot.controlsAvailable){task->taskPending=task} else null)
        }
       }
       Tab.Security->Segments(listOf("Approvals","Alerts"),securityView,{securityView=it}){
@@ -258,20 +279,27 @@ class MainActivity:ComponentActivity(){
    }
   }
  }
+ if(taskPending!=null){
+  val task=taskPending!!
+  AlertDialog(onDismissRequest={taskPending=null},containerColor=Pal.panelHi,titleContentColor=Pal.text,textContentColor=Pal.muted,
+   title={Text("Cancel this task?")},text={Text(task.title)},
+   confirmButton={Button(onClick={taskPending=null;scope.launch{busy=true;try{follow(api.cancelTask(base,token,task.id))}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Cancel task")}},
+   dismissButton={TextButton(onClick={taskPending=null}){Text("Keep it",color=Pal.accent)}})
+ }
  if(approvalPending!=null){
   val (a,yes)=approvalPending!!
   AlertDialog(onDismissRequest={approvalPending=null},containerColor=Pal.panelHi,titleContentColor=Pal.text,textContentColor=Pal.muted,
    title={Text(if(yes)"Approve this operation once?" else "Deny this operation?")},
    text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(a.title,color=Pal.text);Info(a.resource);Info("Agent: ${a.agentId} • Risk: ${a.risk} • Revision: ${a.revision}");Text("The native desktop must re-check this request.",color=Pal.amber)}},
-   confirmButton={Button(onClick={approvalPending=null;scope.launch{busy=true;try{api.decide(base,token,a,yes,deviceId);refresh();notice="Decision sent to desktop"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text(if(yes)"Approve once" else "Deny")}},
+   confirmButton={Button(onClick={approvalPending=null;scope.launch{busy=true;try{follow(api.decide(base,token,a,yes,deviceId))}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text(if(yes)"Approve once" else "Deny")}},
    dismissButton={TextButton(onClick={approvalPending=null}){Text("Cancel",color=Pal.accent)}})
  }
  if(agentPending!=null){
   val (a,action)=agentPending!!
   AlertDialog(onDismissRequest={agentPending=null},containerColor=Pal.panelHi,titleContentColor=Pal.text,textContentColor=Pal.muted,
-   title={Text("Send ${action.replace('_',' ')} to ${a.name}?")},
-   text={Text("A native authorization check is required; emergency stop cannot be undone from this screen.")},
-   confirmButton={Button(onClick={agentPending=null;scope.launch{busy=true;try{api.control(base,token,a,action,snapshot.revision,deviceId);refresh();notice="Control request sent"}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Confirm")}},
+   title={Text(if(action=="emergency_stop")"Pause every agent now?" else "${action.replace('_',' ').replaceFirstChar{it.uppercase()}} ${a.name}?")},
+   text={Text(if(action=="emergency_stop")"This pauses the shared room and every agent. You can resume them from here or at the PC." else "The desktop checks the request again before it does anything.")},
+   confirmButton={Button(onClick={agentPending=null;scope.launch{busy=true;try{follow(api.control(base,token,a,action,snapshot.revision,deviceId))}catch(e:Exception){notice=e.message};busy=false}},enabled=!busy){Text("Confirm")}},
    dismissButton={TextButton(onClick={agentPending=null}){Text("Cancel",color=Pal.accent)}})
  }
 }
@@ -324,13 +352,22 @@ class MainActivity:ComponentActivity(){
  var q by remember{mutableStateOf("")}
  ListPage{
   if(!live)item{Text("Native agent controls are not connected. Read-only monitoring is available.",color=Pal.amber,style=MaterialTheme.typography.bodySmall)}
-  val working=s.liveAgents.filter{it.working}
-  if(working.isNotEmpty())item{Glass(Modifier.enter(0)){
-   Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){LiveDot(true);Text("Working now",color=Pal.green,fontWeight=FontWeight.Bold)}
-   working.forEach{w->Column{Text(w.name,color=Pal.text,fontWeight=FontWeight.SemiBold);Info(w.step?:w.status)}}
+  if(s.liveAgents.isNotEmpty())item{Glass(Modifier.enter(0)){
+   Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){LiveDot(s.liveAgents.any{it.working});Text("Your agents",color=Pal.text,fontWeight=FontWeight.Bold)}
+   s.liveAgents.forEach{w->Column(verticalArrangement=Arrangement.spacedBy(6.dp)){
+    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+     Column(Modifier.weight(1f)){Text(w.name,color=Pal.text,fontWeight=FontWeight.SemiBold);Info(w.step?:w.status)}
+     Tag(if(w.working)"Working" else w.status,if(w.working)Pal.green else Pal.accent)
+    }
+    if(live&&w.id.isNotBlank())Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+     OutlinedButton(onClick={onControl(Agent(w.id,w.name,w.status,"",w.step,0,0),"pause")}){Text("Pause")}
+     OutlinedButton(onClick={onControl(Agent(w.id,w.name,w.status,"",w.step,0,0),"resume")}){Text("Resume")}
+    }
+   }}
+   if(live)Button(onClick={onControl(Agent("all","Everything","","",null,0,0),"emergency_stop")},colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637),contentColor=Color.White)){Text("Pause everything")}
   }}
   item{OutlinedTextField(q,{q=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Find agent")},colors=fieldColors())}
-  itemsIndexed(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){i,a->AgentCard(i,a,live,onControl)}
+  itemsIndexed(s.agents.filter{it.name.contains(q,true)||it.task?.contains(q,true)==true}){i,a->AgentCard(i,a,false,onControl)}
  }
 }
 @Composable private fun Approvals(s:Snapshot,live:Boolean,onDecision:(Approval,Boolean)->Unit)=ListPage{

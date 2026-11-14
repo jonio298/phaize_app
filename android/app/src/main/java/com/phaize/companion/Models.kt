@@ -6,7 +6,9 @@ import org.json.JSONObject
 data class Agent(val id:String,val name:String,val status:String,val role:String,val task:String?,val cpu:Int,val memoryMb:Int,val metricsAvailable:Boolean=false,val readPermission:String="allow",val writePermission:String="ask",val deletePermission:String="ask")
 data class WorkTask(val id:String,val title:String,val agentId:String?,val status:String,val progress:Int,val detail:String?=null)
 /** Who is working right now and on which step, as the desktop reports it. */
-data class LiveAgent(val name:String,val status:String,val working:Boolean,val step:String?)
+data class LiveAgent(val id:String,val name:String,val status:String,val working:Boolean,val step:String?)
+/** One request this phone made to the desktop and how it turned out. */
+data class PhoneRequest(val id:String,val kind:String,val status:String,val message:String)
 data class Approval(val id:String,val revision:Int,val agentId:String,val title:String,val detail:String,val resource:String,val type:String,val risk:String,val expiresAt:String)
 data class FileEvent(val id:String,val path:String,val action:String,val agentId:String,val timestamp:String,val risk:String)
 data class BrowserEntry(val id:String,val name:String,val kind:String,val sizeBytes:Long,val modifiedAt:String,val risk:String)
@@ -27,7 +29,7 @@ fun parseSnapshot(text:String):Snapshot {
  o.items("approvals"){Approval(it.s("id"),it.optInt("revision"),it.s("agentId"),it.s("title"),it.s("detail"),it.s("resource"),it.s("type"),it.s("risk"),it.s("expiresAt"))},
  o.items("files"){FileEvent(it.s("id"),it.s("path"),it.s("action"),it.s("agentId"),it.s("timestamp"),it.s("risk"))},
  o.items("timeline"){Activity(it.s("id"),it.s("type"),it.s("title"),it.s("detail"),it.s("timestamp"),it.n("agentId"))},
- stats.optInt("eventsToday"),stats.optInt("blockedToday"),stats.optInt("completedToday"),o.optString("approvalsAvailability","not_connected")=="connected",o.optString("controlsAvailability","not_connected")=="connected",o.optString("tasksAvailability","not_connected")=="connected",stats.optInt("sampledEvents"),o.items("liveAgents"){LiveAgent(it.s("name"),it.s("status"),it.optBoolean("working"),it.n("step"))})
+ stats.optInt("eventsToday"),stats.optInt("blockedToday"),stats.optInt("completedToday"),o.optString("approvalsAvailability","not_connected")=="connected",o.optString("controlsAvailability","not_connected")=="connected",o.optString("tasksAvailability","not_connected")=="connected",stats.optInt("sampledEvents"),o.items("liveAgents"){LiveAgent(it.s("id"),it.s("name"),it.s("status"),it.optBoolean("working"),it.n("step"))})
 }
 
 data class ChatSummary(val id:String,val title:String,val agentId:String,val preview:String,val updatedAt:String,val messageCount:Int,val working:Boolean=false)
@@ -100,4 +102,9 @@ fun parseOpsPage(raw:String):OpsPage{
   o.items("captures"){OpsCapture(it.s("id"),it.s("timestamp"),it.s("description"),it.s("status"))},
   o.items("terminalHistory"){OpsCommand(it.s("id"),it.s("agentId"),it.s("label"),it.s("status"),it.s("output"),it.s("timestamp"))}
  )
+}
+
+fun parseRequests(text:String):List<PhoneRequest> {
+ val o=JSONObject(text)
+ return o.items("requests"){PhoneRequest(it.s("id"),it.s("kind"),it.s("status"),it.s("message"))}
 }

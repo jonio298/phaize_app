@@ -50,8 +50,8 @@ private val needsYou=setOf("blocked","failed","review","revision")
 @Composable fun ControlsOff(content:@Composable ()->Unit){
  Column(Modifier.fillMaxSize()){
   Glass(Modifier.padding(start=16.dp,end=16.dp,top=8.dp)){
-   Text("Remote actions are turned off",color=Pal.amber,fontWeight=FontWeight.Bold)
-   Info("This phone can look but not change anything. Approving, sending, assigning and controlling agents stay disabled until the security review is done.")
+   Text("Phone controls are off",color=Pal.amber,fontWeight=FontWeight.Bold)
+   Info("This phone can look but not change anything. To act from here, turn on Phone controls on your PC (Settings, Mobile & Local Network) and allow this phone.")
   }
   Box(Modifier.weight(1f)){content()}
  }
@@ -65,7 +65,7 @@ private val needsYou=setOf("blocked","failed","review","revision")
 }
 
 /** The task list, read only: stage, who has it, how far along, and why it is stuck when it is. */
-@Composable fun TasksPage(s:Snapshot){
+@Composable fun TasksPage(s:Snapshot,onCancel:((WorkTask)->Unit)?=null){
  var filter by remember{mutableStateOf("All")}
  val shown=s.tasks.filter{when(filter){"Active"->it.status=="in_progress"||it.status=="pending";"Needs you"->it.status in needsYou;"Done"->it.status=="completed";else->true}}
  LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(11.dp)){
@@ -85,6 +85,7 @@ private val needsYou=setOf("blocked","failed","review","revision")
     Info(t.agentId?:"Unassigned")
     LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth(),color=taskColour(t.status),trackColor=Pal.accent.copy(alpha=.15f))
     t.detail?.let{Text(it,color=if(t.status=="blocked"||t.status=="failed")Pal.red else Pal.amber,style=MaterialTheme.typography.bodySmall)}
+    if(onCancel!=null&&t.status!="completed"&&t.status!="cancelled")androidx.compose.material3.OutlinedButton(onClick={onCancel(t)}){Text("Cancel task")}
    }
   }
  }

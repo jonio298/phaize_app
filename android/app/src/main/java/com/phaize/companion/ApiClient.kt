@@ -41,6 +41,14 @@ class ApiClient {
  /** Read-only conversation views. The id is encoded, and the gateway rejects anything that is not a plain id. */
  suspend fun chats(base:String,token:String)=parseChatList(call(base,token,"/v1/chats"))
  suspend fun chat(base:String,token:String,id:String)=parseChatMessages(call(base,token,"/v1/chats/"+java.net.URLEncoder.encode(id,"UTF-8")))
+ /** What this phone asked the desktop for, newest first, and how each request ended. */
+ suspend fun requests(base:String,token:String)=parseRequests(call(base,token,"/v1/requests"))
+ suspend fun cancelTask(base:String,token:String,taskId:String):String=call(base,token,"/v1/tasks/"+java.net.URLEncoder.encode(taskId,"UTF-8")+"/cancel","POST",JSONObject())
+ /** Sends a message as the owner: to the shared room (id "room") or to one agent by its published id. */
+ suspend fun say(base:String,token:String,id:String,message:String):String {
+  require(message.isNotBlank()&&message.length<=1000)
+  return call(base,token,"/v1/agents/"+java.net.URLEncoder.encode(id,"UTF-8")+"/chat","POST",JSONObject().put("message",message.trim()))
+ }
  /** The changelog and the handoffs between agents. Read only. */
  suspend fun docs(base:String,token:String)=parseDocs(call(base,token,"/v1/docs"))
  suspend fun briefing(base:String,token:String):ProjectBriefing=parseProjectBriefing(call(base,token,"/v1/briefing"))
