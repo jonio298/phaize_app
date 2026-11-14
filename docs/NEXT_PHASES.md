@@ -9,6 +9,7 @@
 
 ## Phase B — Phone security
 - [x] Android Keystore-encrypted gateway token (development credential).
+- [x] Stable per-installation Android device ID, rotated on disconnect (identity label only; not authentication).
 - [ ] QR pairing, device-scoped tokens, revocation and rotation.
 - [ ] Biometric confirmation for approvals and destructive controls.
 - [ ] Configure private TLS connectivity and certificate trust model.
@@ -25,6 +26,7 @@
 
 ## Phase C2 — Advanced mobile operations
 - [x] Android operations screen: health, Git summary, checkpoint requests, capture requests, resource policy and safe command presets.
+- [x] Confirmed quick emergency-lockdown control in the app header, routed through desktop-native authority.
 - [x] Validated gateway transport and missing-native fail-closed errors for advanced tools.
 - [x] Native contract for lockdown, limits, allowlisted command presets and two-phase checkpoint recovery.
 - [ ] Native PhAize Windows bridge implementations and real MXC-enforced command registry.
