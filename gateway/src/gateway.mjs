@@ -79,6 +79,24 @@ export function createGateway({adapter,token,rateLimit=60,allowControl=false}){
      if(outcome?.status&&outcome.status!=='ok')return json(res,resultStatus(outcome),{error:outcome.status});
      return json(res,200,{entries:Array.isArray(outcome?.entries)?outcome.entries.slice(0,200):[],nextCursor:outcome?.nextCursor??null});
    }
+   if(req.method==='GET'&&(url.pathname==='/v1/briefing'||url.pathname==='/v1/builds')){
+     if(url.search)return json(res,400,{error:'invalid_query'});
+     const method=url.pathname==='/v1/briefing'?'briefing':'builds';
+     if(typeof adapter[method]!=='function')return json(res,503,{error:'native_'+method+'_unavailable'});
+     const outcome=await adapter[method]();
+     if(outcome?.status&&outcome.status!=='ok')return json(res,resultStatus(outcome),{error:outcome.status});
+     if(method==='briefing')return json(res,200,{
+       generatedAt:outcome?.generatedAt??null,workspace:outcome?.workspace??'',
+       since:outcome?.since??null,completed:Array.isArray(outcome?.completed)?outcome.completed.slice(0,30):[],
+       blockers:Array.isArray(outcome?.blockers)?outcome.blockers.slice(0,30):[],
+       decisions:Array.isArray(outcome?.decisions)?outcome.decisions.slice(0,30):[],
+       filesChanged:Math.max(0,Number.isSafeInteger(outcome?.filesChanged)?outcome.filesChanged:0),
+       summary:typeof outcome?.summary==='string'?outcome.summary.slice(0,2500):''
+     });
+     return json(res,200,{generatedAt:outcome?.generatedAt??null,
+       runs:Array.isArray(outcome?.runs)?outcome.runs.slice(0,50):[],
+       repository:typeof outcome?.repository==='string'?outcome.repository.slice(0,160):''});
+   }
    const readRoute=(url.pathname.match(/^\/v1\/agents\/([a-zA-Z0-9_-]{1,80})\/chat$/)&&'chat')||(url.pathname==='/v1/reviews'&&'reviews')||(url.pathname==='/v1/alerts'&&'alerts');
    if(req.method==='GET'&&readRoute){
      const keys=[...url.searchParams.keys()];
