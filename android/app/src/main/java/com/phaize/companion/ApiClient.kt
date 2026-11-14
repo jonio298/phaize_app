@@ -24,6 +24,8 @@ class ApiClient {
   }finally{conn.disconnect()}
  }
  suspend fun snapshot(base:String,token:String)=parseSnapshot(call(base,token,"/v1/snapshot"))
+ suspend fun briefing(base:String,token:String):ProjectBriefing=parseProjectBriefing(call(base,token,"/v1/briefing"))
+ suspend fun builds(base:String,token:String):BuildFeed=parseBuildFeed(call(base,token,"/v1/builds"))
  suspend fun decide(base:String,token:String,a:Approval,approve:Boolean,deviceId:String):String {
   val p=JSONObject().put("decision",if(approve)"approve_once" else "deny").put("deviceId",deviceId).put("expectedRevision",a.revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/approvals/${a.id}/decisions","POST",p)
