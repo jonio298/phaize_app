@@ -76,6 +76,24 @@ POST `/mobile/v1/ops/action` accepts one of exactly these discriminator shapes, 
 
 All actions require permission checks, durable audit, revision/idempotency, native confirmation, and MXC containment where applicable. The gateway cannot authorize a command by itself. Responses `status=forbidden|conflict|unavailable` are never success. Native host restart invalidates stale pending controls. Maintain separate device-scoped capabilities (view health, run presets, read Git, control limits, restore checkpoint, invoke lockdown, capture window).
 
+## GET /mobile/v1/briefing
+
+Return a redacted, bounded project briefing based **only on recorded desktop evidence**, e.g.
+`{"generatedAt":"2026-11-13T17:00:00Z","workspace":"Project A","since":"2026-11-13T08:00:00Z","summary":"Three tasks completed; one requires review","filesChanged":12,"completed":["Unit tests updated"],"blockers":["Build failure"],"decisions":["Approval pending"]}`.
+
+The desktop must choose the time window from the authenticated device's last-seen cursor or an explicit safe default; the phone must not send an arbitrary query. Avoid inventing observations during ETW gaps. Return no raw logs, file contents, prompts, secrets or out-of-scope paths. Include a monitoring-coverage warning in summary when completeness is not guaranteed. Keep title lists short and bounded.
+
+## GET /mobile/v1/builds
+
+Return a trusted summary from the desktop's configured GitHub repository or local CI records, e.g.
+`{"generatedAt":"2026-11-13T17:00:00Z","repository":"owner/repo","runs":[{"id":"123","title":"Android build","workflow":"Mobile CI","branch":"main","status":"completed","conclusion":"success","updatedAt":"2026-11-13T17:00:00Z","url":"https://github.com/owner/repo/actions/runs/123"}]}`.
+
+The desktop must bind the repository to approved configuration, authenticate any GitHub integration server-side, redact private metadata for unprivileged devices, cap results to 50, and reject untrusted arbitrary repository URLs or actions. This endpoint is read-only: no build triggers, PR merges or arbitrary commands from the phone. Phone links should only open HTTPS github.com run URLs. The gateway uses `/v1/briefing` and `/v1/builds`, and returns 503 until the native handlers exist.
+
+## QR pairing release gate
+
+QR pairing is **not implemented yet**; development bearer tokens are not production identity. A secure initial pairing flow must be initiated on the unlocked desktop by a physical user, using a single-use short-lived code and authenticated key exchange with device-held asymmetric keys. Persist only device public keys and revocable permissions on the desktop, bind every action to a device identity, support audit/rotation/revocation and reject expired/replayed enrollment. Require encrypted authenticated transport with anti-MITM key verification. No unauthenticated pairing endpoint may accept device registration over the LAN or internet. Implement tests for intercepted/replayed codes, stolen device, reconnection, and revocation.
+
 ## Integration steps
 
 1. Implement an immutable redacted snapshot adapter in PhAize desktop.
