@@ -68,7 +68,7 @@ class MainActivity:ComponentActivity(){
  var notifyEnabled by remember{mutableStateOf(notificationPrefs.getBoolean("enabled",false))}
  val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->notifyEnabled=granted;notificationPrefs.edit().putBoolean("enabled",granted).apply()}
  val scope=rememberCoroutineScope()
- val deviceId=remember{UUID.randomUUID().toString()}
+ var deviceId by remember{mutableStateOf(store.deviceId())}
  val saved=remember{store.load()}
  var base by remember{mutableStateOf(saved?.first?:"")}
  var token by remember{mutableStateOf(saved?.second?:"")}
@@ -92,6 +92,7 @@ class MainActivity:ComponentActivity(){
  var extraBusy by remember{mutableStateOf(false)}
  var approvalPending by remember{mutableStateOf<Pair<Approval,Boolean>?>(null)}
  var agentPending by remember{mutableStateOf<Pair<Agent,String>?>(null)}
+ var lockdownPending by remember{mutableStateOf(false)}
  var policyPending by remember{mutableStateOf<Agent?>(null)}
  suspend fun refresh(){
   try{val new=api.snapshot(base,token);snapshot=new;live=new.mode=="live";if(!live)notice="Demo gateway is not connected to a desktop"}
@@ -132,6 +133,7 @@ class MainActivity:ComponentActivity(){
      Text(if(live)"LIVE • Desktop connected" else "DEMO / OFFLINE",color=if(live)green else amber,style=MaterialTheme.typography.labelSmall)}
    Row{
     IconButton(onClick={scope.launch{if(live){refresh();if(tab==Tab.Security&&securityView=="Alerts")try{alertPage=api.alerts(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null)try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){notice=e.message};if(tab==Tab.Work&&workView=="Reviews")try{reviewPage=api.reviews(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Tools")try{opsPage=api.operations(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Logs")try{errorsPage=api.errors(base,token)}catch(e:Exception){notice=e.message};if(tab==Tab.More&&moreView=="Files")try{browserPage=api.browse(base,token,fileStack.lastOrNull())}catch(e:Exception){notice=e.message}}}}){Icon(Icons.Outlined.Refresh,"Refresh",tint=accent)}
+    IconButton(onClick={lockdownPending=true},enabled=live){Icon(Icons.Outlined.GppBad,"Emergency lockdown",tint=if(live)red else muted)}
     IconButton(onClick={tab=Tab.More;moreView="Settings"}){Icon(Icons.Outlined.Settings,"Connection settings",tint=accent)}
    }
   }
@@ -187,12 +189,31 @@ class MainActivity:ComponentActivity(){
        "Tools"->OperationsScreen(live,extraBusy,opsPage,snapshot.agents,{scope.launch{extraBusy=true;try{opsPage=api.operations(base,token)}catch(e:Exception){notice=e.message?:"Operations unavailable"}finally{extraBusy=false}}},{action,parameters->scope.launch{extraBusy=true;try{api.opsAction(base,token,action,parameters,snapshot.revision,deviceId);opsPage=api.operations(base,token);notice="Native desktop accepted "+action.replace('_',' ')}catch(e:Exception){notice="Request rejected: "+(e.message?:"unavailable")}finally{extraBusy=false}}})
        "Settings"->Settings(base,token,live,{base=it},{token=it},{
         scope.launch{busy=true;try{val result=api.snapshot(base,token);snapshot=result;live=result.mode=="live";if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}else notice="Demo gateway: real controls disabled"}catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-       },{store.clear();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;opsPage=null;fileStack=emptyList();notice="Connection removed"},busy)
+       },{store.clear();deviceId=store.deviceId();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;opsPage=null;fileStack=emptyList();notice="Connection removed"},busy)
       }
      }
     }
    }
   }
+ }
+ if(lockdownPending){
+  AlertDialog(onDismissRequest={lockdownPending=false},
+   title={Text("Emergency security lockdown")},
+   text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+    Text("Request an immediate desktop-wide agent lockdown. The native coordinator must enforce this; the phone cannot disable MXC or bypass policy.")
+    Text("Desktop: ${snapshot.host.name} • Monitoring: ${snapshot.host.monitoring}",color=amber)
+    Text("This may interrupt active tasks and agents.",color=red)
+   }},
+   confirmButton={Button(enabled=live&&!busy,onClick={lockdownPending=false;scope.launch{
+    busy=true
+    try{
+     api.opsAction(base,token,"lockdown",org.json.JSONObject().put("reason","User requested emergency lockdown from paired Android companion"),snapshot.revision,deviceId)
+     refresh();notice="Desktop acknowledged emergency lockdown request"
+    }catch(e:Exception){notice="Lockdown could not be confirmed: "+(e.message?:"desktop unavailable")}
+    finally{busy=false}
+   }},colors=ButtonDefaults.buttonColors(containerColor=Color(0xFF843637))){Text("Request lockdown")}},
+   dismissButton={TextButton(onClick={lockdownPending=false}){Text("Cancel")}}
+  )
  }
  if(approvalPending!=null){
   val (a,yes)=approvalPending!!
