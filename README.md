@@ -14,6 +14,8 @@ A phone-first Android companion and local-first Node.js gateway for PhAize deskt
 - Android Keystore-backed encrypted saved gateway token.
 - Local gateway authenticated with bearer token, limited JSON body, rate limits, request IDs, idempotency and revision checking.
 - Demo adapter, optional desktop-bridge adapter, bounded event polling endpoint.
+- **Project briefing:** evidence-based, read-only "since you were away" view of completed work, blockers, decisions and file counts (requires native desktop support).
+- **Build and CI center:** trusted, read-only workflow status and GitHub run links (requires native desktop support).
 - CI definitions for Node gateway tests and Android debug build.
 
 ## Important: what is NOT completed
