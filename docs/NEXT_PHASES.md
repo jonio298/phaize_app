@@ -21,6 +21,8 @@
 - [x] Mobile task creation/assignment request UI and gateway contract (requires native bridge).
 - [x] Mobile scoped file-browser metadata, file activity and error-log UI and gateway contracts (requires native bridge).
 - [ ] Native task queue hookup, task review actions, agent chat, detailed process metrics, file diffs and audit drill-downs.
+- [x] Android project briefing and read-only CI/build center, with bounded native gateway transport and tests.
+- [ ] Native desktop briefing evidence aggregator and authorized GitHub CI connector.
 - [ ] Pagination and virtualization for long event histories.
 - [ ] Multiple workspace/host profiles.
 
