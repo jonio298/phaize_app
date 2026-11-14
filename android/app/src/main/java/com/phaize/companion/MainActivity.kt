@@ -85,6 +85,8 @@ class MainActivity:ComponentActivity(){
  var securityView by remember{mutableStateOf("Approvals")}
  var moreView by remember{mutableStateOf("Files")}
  var chatPage by remember{mutableStateOf<ChatPage?>(null)}
+ var briefingPage by remember{mutableStateOf<ProjectBriefing?>(null)}
+ var buildFeed by remember{mutableStateOf<BuildFeed?>(null)}
  var reviewPage by remember{mutableStateOf<ReviewPage?>(null)}
  var alertPage by remember{mutableStateOf<AlertPage?>(null)}
  var opsPage by remember{mutableStateOf<OpsPage?>(null)}
@@ -106,6 +108,8 @@ class MainActivity:ComponentActivity(){
    if(tab==Tab.More&&moreView=="Logs"){loadingExtra=true;try{errorsPage=api.errors(base,token)}catch(e:Exception){errorsPage=null;notice="Error log: "+(e.message?:"unavailable")}finally{loadingExtra=false}}
    if(tab==Tab.Work&&workView=="Chat"&&chatAgentId!=null){extraBusy=true;try{chatPage=api.chat(base,token,chatAgentId!!)}catch(e:Exception){chatPage=null;notice="Chat: "+(e.message?:"unavailable")}finally{extraBusy=false}}
    if(tab==Tab.Work&&workView=="Reviews"){extraBusy=true;try{reviewPage=api.reviews(base,token)}catch(e:Exception){reviewPage=null;notice="Reviews: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+   if(tab==Tab.Work&&workView=="Briefing"){extraBusy=true;try{briefingPage=api.briefing(base,token)}catch(e:Exception){briefingPage=null;notice="Briefing: "+(e.message?:"unavailable")}finally{extraBusy=false}}
+   if(tab==Tab.Work&&workView=="Builds"){extraBusy=true;try{buildFeed=api.builds(base,token)}catch(e:Exception){buildFeed=null;notice="Builds: "+(e.message?:"unavailable")}finally{extraBusy=false}}
    if(tab==Tab.Security&&securityView=="Alerts"){extraBusy=true;try{alertPage=api.alerts(base,token)}catch(e:Exception){alertPage=null;notice="Alerts: "+(e.message?:"unavailable")}finally{extraBusy=false}}
   }
  }
@@ -152,13 +156,15 @@ class MainActivity:ComponentActivity(){
     Tab.Agents->Agents(snapshot,live,{a,action->agentPending=a to action},{a->policyPending=a})
     Tab.Work->{
      Column{
-      Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Tasks","Goals","Chat","Reviews").forEach{v->FilterChip(selected=workView==v,onClick={workView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
+      Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=10.dp)){listOf("Tasks","Goals","Chat","Reviews","Briefing","Builds").forEach{v->FilterChip(selected=workView==v,onClick={workView=v},label={Text(v)},modifier=Modifier.padding(end=6.dp))}}
       Box(Modifier.weight(1f)){
        when(workView){
         "Tasks"->TasksScreen(snapshot,live){title,description,agent,priority->scope.launch{busy=true;try{api.createTask(base,token,title,description,agent,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted new task"}catch(e:Exception){notice="Task failed: "+(e.message?:"unavailable")}finally{busy=false}}}
         "Goals"->GoalScreen(live,busy){goal,instructions,priority->scope.launch{busy=true;try{api.createGoal(base,token,goal,instructions,priority,snapshot.revision,deviceId);refresh();notice="Desktop accepted goal"}catch(e:Exception){notice="Delegation failed: "+(e.message?:"unavailable")}finally{busy=false}}}
         "Chat"->AgentChatScreen(snapshot.agents,chatAgentId,live,extraBusy,chatPage,{id->chatAgentId=id;chatPage=null},{id,msg->scope.launch{extraBusy=true;try{api.sendChat(base,token,id,msg,snapshot.revision,deviceId);chatPage=api.chat(base,token,id);notice="Message accepted by desktop"}catch(e:Exception){notice="Message failed: "+(e.message?:"unavailable")}finally{extraBusy=false}}})
         "Reviews"->CodeReviewScreen(live,extraBusy,reviewPage){item,decision->scope.launch{extraBusy=true;try{api.reviewDecision(base,token,item.id,decision,item.revision,deviceId);reviewPage=api.reviews(base,token);notice="Desktop accepted review decision"}catch(e:Exception){notice="Review failed: "+(e.message?:"unavailable")}finally{extraBusy=false}}}
+        "Briefing"->BriefingScreen(live,extraBusy,briefingPage){scope.launch{extraBusy=true;try{briefingPage=api.briefing(base,token)}catch(e:Exception){notice=e.message?:"Briefing unavailable"}finally{extraBusy=false}}}
+        "Builds"->BuildMonitorScreen(live,extraBusy,buildFeed){scope.launch{extraBusy=true;try{buildFeed=api.builds(base,token)}catch(e:Exception){notice=e.message?:"Build feed unavailable"}finally{extraBusy=false}}}
        }
       }
      }
@@ -189,7 +195,7 @@ class MainActivity:ComponentActivity(){
        "Tools"->OperationsScreen(live,extraBusy,opsPage,snapshot.agents,{scope.launch{extraBusy=true;try{opsPage=api.operations(base,token)}catch(e:Exception){notice=e.message?:"Operations unavailable"}finally{extraBusy=false}}},{action,parameters->scope.launch{extraBusy=true;try{api.opsAction(base,token,action,parameters,snapshot.revision,deviceId);opsPage=api.operations(base,token);notice="Native desktop accepted "+action.replace('_',' ')}catch(e:Exception){notice="Request rejected: "+(e.message?:"unavailable")}finally{extraBusy=false}}})
        "Settings"->Settings(base,token,live,{base=it},{token=it},{
         scope.launch{busy=true;try{val result=api.snapshot(base,token);snapshot=result;live=result.mode=="live";if(live){store.save(base,token);notice="Live desktop gateway connected";tab=Tab.Home}else notice="Demo gateway: real controls disabled"}catch(e:Exception){live=false;notice="Connection failed: "+(e.message?:"unknown")}finally{busy=false}}
-       },{store.clear();deviceId=store.deviceId();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;opsPage=null;fileStack=emptyList();notice="Connection removed"},busy)
+       },{store.clear();deviceId=store.deviceId();token="";base="";live=false;snapshot=demo();browserPage=null;errorsPage=null;chatPage=null;reviewPage=null;alertPage=null;opsPage=null;briefingPage=null;buildFeed=null;fileStack=emptyList();notice="Connection removed"},busy)
       }
      }
     }
