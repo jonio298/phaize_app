@@ -52,11 +52,9 @@ import java.util.UUID
 private enum class Tab(val title:String,val subtitle:String,val short:String,val icon:ImageVector){
  Home("Overview","What your agents are doing","Home",Icons.Outlined.Dashboard),
  Agents("Agents","Who is working, and on what","Agents",Icons.Outlined.SmartToy),
- Approvals("Approvals","Permission requests waiting for you","Approve",Icons.Outlined.VerifiedUser),
- Chats("Chats","Read agent conversations","Chats",Icons.Outlined.ChatBubbleOutline),
- Tasks("Tasks","What is planned, running and stuck","Tasks",Icons.Outlined.Checklist),
- Log("Log","Timeline, files, changelog and handoffs","Log",Icons.Outlined.History),
- Settings("Settings","How the app looks and connects","Settings",Icons.Outlined.Settings)
+ Work("Work","Tasks, chats, goals, reviews and builds","Work",Icons.Outlined.Checklist),
+ Security("Security","Approvals and alerts","Security",Icons.Outlined.VerifiedUser),
+ More("More","Log, errors, tools and settings","More",Icons.Outlined.Apps)
 }
 /** Nothing is shown as live until a paired desktop answers: no sample agents, files, approvals or events. */
 private fun emptySnapshot():Snapshot=Snapshot(0,"offline",Host("Not paired",false,"unknown","unknown",0,0),emptyList(),emptyList(),emptyList(),emptyList(),emptyList(),0,0,0,false,false,false,0)
@@ -129,7 +127,17 @@ class MainActivity:ComponentActivity(){
  var live by remember{mutableStateOf(false)}
  var connected by remember{mutableStateOf(false)}
  var snapshot by remember{mutableStateOf(emptySnapshot())}
- var tab by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))Tab.Settings else Tab.Home)}
+ var tab by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))Tab.More else Tab.Home)}
+ var workView by remember{mutableStateOf("Tasks")}
+ var securityView by remember{mutableStateOf("Approvals")}
+ var moreView by remember(incomingInvite){mutableStateOf(if(incomingInvite.startsWith("phaize://pair?"))"Settings" else "Log")}
+ var briefingPage by remember{mutableStateOf<ProjectBriefing?>(null)}
+ var buildFeed by remember{mutableStateOf<BuildFeed?>(null)}
+ var reviewPage by remember{mutableStateOf<ReviewPage?>(null)}
+ var alertPage by remember{mutableStateOf<AlertPage?>(null)}
+ var errorsPage by remember{mutableStateOf<ErrorPage?>(null)}
+ var opsPage by remember{mutableStateOf<OpsPage?>(null)}
+ var extraBusy by remember{mutableStateOf(false)}
  var pairingLink by remember(incomingInvite){mutableStateOf(incomingInvite)}
  var chatsSupported by remember{mutableStateOf(true)}
  var notice by remember{mutableStateOf<String?>(null)}
@@ -159,17 +167,29 @@ class MainActivity:ComponentActivity(){
   while(base.isNotBlank()&&token.isNotBlank()&&api.lanFingerprint!=null){delay(8000);refresh()}
  }
  LaunchedEffect(connected){if(!connected){docs=DocsView(false,emptyList(),emptyList());chatList=ChatList(false,emptyList());chatMessages=emptyList();openChat=null}}
- LaunchedEffect(connected,tab,openChat?.id){
-  if(connected&&tab==Tab.Chats){
+ LaunchedEffect(connected,tab,workView,openChat?.id){
+  if(connected&&tab==Tab.Work&&workView=="Chats"){
    while(true){refreshChats();if(!chatsSupported)break;openChat?.let{refreshChat(it.id)};delay(if(openChat!=null)4000 else 6000)}
   }
  }
  LaunchedEffect(connected,tab){
-  if(connected&&tab==Tab.Log){while(true){try{docs=api.docs(base,token)}catch(e:Exception){val m=e.message?:"";if(!m.startsWith("HTTP 404")&&!m.startsWith("HTTP 503"))notice="Log unavailable: "+m.ifBlank{"offline"}};delay(10000)}}
+  if(connected&&tab==Tab.More&&moreView=="Log"){while(true){try{docs=api.docs(base,token)}catch(e:Exception){val m=e.message?:"";if(!m.startsWith("HTTP 404")&&!m.startsWith("HTTP 503"))notice="Log unavailable: "+m.ifBlank{"offline"}};delay(10000)}}
+ }
+ LaunchedEffect(connected,tab,workView,securityView,moreView){
+  // Read-only extras. A desktop that does not serve one (404 or 503) simply shows that screen as unavailable, without a warning.
+  suspend fun <T> tryLoad(load:suspend()->T):T?=try{extraBusy=true;load()}catch(e:Exception){val m=e.message?:"";if(!m.startsWith("HTTP 404")&&!m.startsWith("HTTP 503"))notice="Could not load this screen: "+m.ifBlank{"offline"};null}finally{extraBusy=false}
+  if(connected){
+   if(tab==Tab.Work&&workView=="Reviews")reviewPage=tryLoad{api.reviews(base,token)}
+   if(tab==Tab.Work&&workView=="Briefing")briefingPage=tryLoad{api.briefing(base,token)}
+   if(tab==Tab.Work&&workView=="Builds")buildFeed=tryLoad{api.builds(base,token)}
+   if(tab==Tab.Security&&securityView=="Alerts")alertPage=tryLoad{api.alerts(base,token)}
+   if(tab==Tab.More&&moreView=="Errors")errorsPage=tryLoad{api.errors(base,token)}
+   if(tab==Tab.More&&moreView=="Tools")opsPage=tryLoad{api.operations(base,token)}
+  }
  }
  val shownMessages=if(connected&&chatsSupported)chatMessages else emptyList()
  val chatBanner=when{!connected->"Not connected. Pair with your PC in Settings to read chats.";!chatsSupported->"This desktop does not share chats with the phone yet.";else->null}
- val navItems=Tab.entries.map{NavItem(it.short,it.icon,if(it==Tab.Approvals&&live&&snapshot.approvalsAvailable)snapshot.approvals.size else 0)}
+ val navItems=Tab.entries.map{NavItem(it.short,it.icon,if(it==Tab.Security&&live&&snapshot.approvalsAvailable)snapshot.approvals.size else 0)}
  Box(Modifier.fillMaxSize().phaizeBackground()){
   Scaffold(containerColor=Color.Transparent,topBar={AppHeader(tab,live,connected){scope.launch{if(connected)refresh()}}},
    bottomBar={GlassNavBar(navItems,tab.ordinal){tab=Tab.entries[it]}}){padding->
@@ -188,13 +208,29 @@ class MainActivity:ComponentActivity(){
      }
     },label="tab"){t->
      when(t){
-      Tab.Home->Home(snapshot,{tab=it})
+      Tab.Home->Home(snapshot){go->when(go){Tab.Security->{tab=Tab.Security;securityView="Approvals"};Tab.More->{tab=Tab.More;moreView="Settings"};else->tab=go}}
       Tab.Agents->Agents(snapshot,live&&snapshot.controlsAvailable){a,action->agentPending=a to action}
-      Tab.Approvals->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
-      Tab.Chats->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,chatList.chats.filter{it.working}.map{it.id}.toSet(),{c->chatMessages=emptyList();openChat=c},{openChat=null})
-      Tab.Tasks->TasksPage(snapshot)
-      Tab.Log->LogPage(snapshot,docs,{Files(it)},{History(it)})
-      Tab.Settings->SettingsPage(prefs,pairingLink,{pairingLink=it},live,busy,{
+      Tab.Work->Segments(listOf("Tasks","Chats","Briefing","Builds","Reviews","Goals"),workView,{workView=it}){
+       when(workView){
+        "Chats"->ChatsPage(chatBanner,if(connected&&chatsSupported)chatList.chats else emptyList(),openChat,shownMessages,chatLoading,chatList.chats.filter{it.working}.map{it.id}.toSet(),{c->chatMessages=emptyList();openChat=c},{openChat=null})
+        "Briefing"->BriefingScreen(connected,extraBusy,briefingPage,{workView="Briefing"})
+        "Builds"->BuildMonitorScreen(connected,extraBusy,buildFeed,{workView="Builds"})
+        "Reviews"->ControlsOff{CodeReviewScreen(false,extraBusy,reviewPage,{_,_->})}
+        "Goals"->ControlsOff{GoalScreen(false,false,{_,_,_->})}
+        else->TasksPage(snapshot)
+       }
+      }
+      Tab.Security->Segments(listOf("Approvals","Alerts"),securityView,{securityView=it}){
+       when(securityView){
+        "Alerts"->AlertsScreen(connected,extraBusy,alertPage,{securityView="Approvals"})
+        else->Approvals(snapshot,live&&snapshot.approvalsAvailable){a,ok->approvalPending=a to ok}
+       }
+      }
+      Tab.More->Segments(listOf("Log","Errors","Tools","Settings"),moreView,{moreView=it}){
+       when(moreView){
+        "Errors"->LogCenterScreen(snapshot,connected,errorsPage,extraBusy)
+        "Tools"->ControlsOff{OperationsScreen(false,extraBusy,opsPage,snapshot.agents,{moreView="Tools"},{_,_->})}
+        "Settings"->SettingsPage(prefs,pairingLink,{pairingLink=it},live,busy,{
         scope.launch{
          busy=true
          try{
@@ -214,6 +250,9 @@ class MainActivity:ComponentActivity(){
         snapshot=emptySnapshot();openChat=null
         notice="Phone disconnected. Revoke it on the Windows desktop to invalidate its access."
        })
+        else->LogPage(snapshot,docs,{Files(it)},{History(it)})
+       }
+      }
      }
     }
    }
@@ -264,13 +303,13 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun Home(s:Snapshot,go:(Tab)->Unit)=ListPage{
- if(s.mode!="live")item{Glass(Modifier.enter(0)){Text("Not paired yet",color=Pal.text,fontWeight=FontWeight.Bold);Info("Pair this phone with your PC over Wi-Fi to see your agents, files and activity.");Button(onClick={go(Tab.Settings)}){Text("Pair with your PC")}}}
+ if(s.mode!="live")item{Glass(Modifier.enter(0)){Text("Not paired yet",color=Pal.text,fontWeight=FontWeight.Bold);Info("Pair this phone with your PC over Wi-Fi to see your agents, files and activity.");Button(onClick={go(Tab.More)}){Text("Pair with your PC")}}}
  item{Glass(Modifier.enter(0)){Text(s.host.name,color=Pal.text,fontWeight=FontWeight.Bold);Info("Monitoring ${s.host.monitoring} • Containment ${s.host.containment}");Info(if(s.mode=="live")"Resource metrics not yet connected" else "Pair this phone with your PC to see live data.")}}
  item{Row(Modifier.enter(1),horizontalArrangement=Arrangement.spacedBy(10.dp)){
   StatCard(Modifier.weight(1f),s.agents.count{it.status!="idle"},"Active agents",Pal.accent)
   StatCard(Modifier.weight(1f),if(s.approvalsAvailable)s.approvals.size else null,"Approvals",Pal.amber)
  }}
- item{TextButton(onClick={go(Tab.Approvals)},modifier=Modifier.enter(2)){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration",color=Pal.accent)}}
+ item{TextButton(onClick={go(Tab.Security)},modifier=Modifier.enter(2)){Text(if(s.approvalsAvailable)"Open pending approvals" else "Approvals unavailable until native integration",color=Pal.accent)}}
  itemsIndexed(s.tasks){i,t->
   val on=LocalAnim.current
   val progress by animateFloatAsState(t.progress.coerceIn(0,100)/100f,motion(on,tween(900,easing=FastOutSlowInEasing)),label="progress")

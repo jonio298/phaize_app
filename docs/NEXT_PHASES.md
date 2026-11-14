@@ -9,6 +9,7 @@
 
 ## Phase B — Phone security
 - [x] Android Keystore-encrypted gateway token (development credential).
+- [x] Stable per-installation Android device ID, rotated on disconnect (identity label only; not authentication).
 - [ ] QR pairing, device-scoped tokens, revocation and rotation.
 - [ ] Biometric confirmation for approvals and destructive controls.
 - [ ] Configure private TLS connectivity and certificate trust model.
@@ -17,9 +18,23 @@
 ## Phase C — Feature parity
 - [x] Overview, agents, approvals, file event feed, timeline, and basic settings.
 - [x] Approval and agent-control request contract (native bridge required).
-- [ ] Task assignment, review status, agent chat, detailed process metrics, file diffs and audit drill-downs.
+- [x] Mobile task creation/assignment request UI and gateway contract (requires native bridge).
+- [x] Mobile scoped file-browser metadata, file activity and error-log UI and gateway contracts (requires native bridge).
+- [ ] Native task queue hookup, task review actions, agent chat, detailed process metrics, file diffs and audit drill-downs.
+- [x] Android project briefing and read-only CI/build center, with bounded native gateway transport and tests.
+- [ ] Native desktop briefing evidence aggregator and authorized GitHub CI connector.
 - [ ] Pagination and virtualization for long event histories.
 - [ ] Multiple workspace/host profiles.
+
+## Phase C2 — Advanced mobile operations
+- [x] Android operations screen: health, Git summary, checkpoint requests, capture requests, resource policy and safe command presets.
+- [x] Confirmed quick emergency-lockdown control in the app header, routed through desktop-native authority.
+- [x] Validated gateway transport and missing-native fail-closed errors for advanced tools.
+- [x] Native contract for lockdown, limits, allowlisted command presets and two-phase checkpoint recovery.
+- [ ] Native PhAize Windows bridge implementations and real MXC-enforced command registry.
+- [ ] Actual redacted image-pixel retrieval and audited display for window captures.
+- [ ] Background notification delivery, persistent pairing and credential revocation.
+- [ ] On-device integration tests for every control, agent, host restart and monitoring fault.
 
 ## Phase D — Live delivery
 - [x] Periodic polling and revision-based events endpoint.

@@ -4,19 +4,25 @@ A phone-first Android companion and local-first Node.js gateway for PhAize deskt
 
 ## Implemented
 
-- Android Jetpack Compose: Overview, Agents, Approvals, Files, Timeline/Changelog, and Settings.
+- Android Jetpack Compose: five-tab **Home / Agents / Work / Security / More** layout; Work includes Tasks, Goal Delegation, Agent Chat, Code Reviews; Security includes Approvals and Alerts; More includes Files, Logs, Settings.
 - Search and filtering for agent, file and event activity.
-- Approve once / deny confirmations; pause, resume and emergency-stop requests.
+- Approve once / deny confirmations; native-gated start, pause, resume and emergency-stop requests.
+- Per-agent Read/Write/Delete policy editor with strict safe defaults (no mobile auto-allow writes/deletes).
+- Task drafting with assignment/priority, read-only workspace browsing by opaque directory ID, and searchable error diagnostics.
+- Goal delegation requests via native coordinator; per-agent chat transcript and send; diff review with explicit decisions; native alerts feed.
+- Opt-in Android high/critical security notifications while the app is active/polling; generic lock-screen content for privacy. **Background FCM push not implemented.**
 - Android Keystore-backed encrypted saved gateway token.
 - Local gateway authenticated with bearer token, limited JSON body, rate limits, request IDs, idempotency and revision checking.
 - Demo adapter, optional desktop-bridge adapter, bounded event polling endpoint.
+- **Project briefing:** evidence-based, read-only "since you were away" view of completed work, blockers, decisions and file counts (requires native desktop support).
+- **Build and CI center:** trusted, read-only workflow status and GitHub run links (requires native desktop support).
 - CI definitions for Node gateway tests and Android debug build.
 
 ## Important: what is NOT completed
 
-The real PhAize desktop IPC bridge is **not implemented in this repository**. The desktop must provide `/mobile/v1/snapshot`, `/mobile/v1/approvals/decisions` and `/mobile/v1/agent-control` through a loopback-only authenticated service. All remote actions must be checked by PhAize native enforcement, including MXC, leases, revisions, expiration, scope and device authorization.
+The real PhAize desktop IPC bridge is **not implemented in this repository**. The desktop must provide `/mobile/v1/snapshot`, `/mobile/v1/approvals/decisions`, `/mobile/v1/agent-control`, `/mobile/v1/agent-permissions`, `/mobile/v1/tasks`, `/mobile/v1/files/browse`, `/mobile/v1/errors`, `/mobile/v1/agents/:agentId/chat`, `/mobile/v1/agent-chat`, `/mobile/v1/goals`, `/mobile/v1/reviews`, `/mobile/v1/reviews/decision` and `/mobile/v1/alerts` through a loopback-only authenticated service. All remote actions must be checked by PhAize native enforcement, including MXC, leases, revisions, expiration, scope and device authorization.
 
-No Android APK, FCM push delivery, biometric approval enforcement, QR pairing, live WebSocket transport, or Vercel deployment is included. The app uses polling. Nothing is publicly deployed. Do not treat demo approvals as real.
+CI produces a debug APK artifact when Android compilation succeeds; no production-signed APK, FCM push delivery, biometric approval enforcement, QR pairing, live WebSocket transport, or Vercel deployment is included. The app uses polling. Nothing is publicly deployed. Do not treat demo approvals as real.
 
 ## Local development
 

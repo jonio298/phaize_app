@@ -3,6 +3,8 @@ package com.phaize.companion
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,28 @@ import androidx.compose.ui.unit.dp
 private fun taskColour(status:String):Color=when(status){"completed"->Pal.green;"blocked","failed"->Pal.red;"revision","review"->Pal.amber;else->Pal.accent}
 private fun taskLabel(status:String):String=when(status){"in_progress"->"In progress";"completed"->"Done";else->status.replace('_',' ').replaceFirstChar{it.uppercase()}}
 private val needsYou=setOf("blocked","failed","review","revision")
+
+/** A row of section choices (scrolls sideways when there are many) with the chosen section's page below it. */
+@Composable fun Segments(options:List<String>,chosen:String,onChoose:(String)->Unit,content:@Composable ()->Unit){
+ Column(Modifier.fillMaxSize()){
+  Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+   options.forEach{f->FilterChip(selected=chosen==f,onClick={onChoose(f)},label={Text(f)},
+    colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Pal.accent.copy(alpha=.2f),selectedLabelColor=Pal.accent))}
+  }
+  Box(Modifier.weight(1f)){content()}
+ }
+}
+
+/** Shown above every screen that could change something on the desktop: remote actions stay off until the independent security review. */
+@Composable fun ControlsOff(content:@Composable ()->Unit){
+ Column(Modifier.fillMaxSize()){
+  Glass(Modifier.padding(start=16.dp,end=16.dp,top=8.dp)){
+   Text("Remote actions are turned off",color=Pal.amber,fontWeight=FontWeight.Bold)
+   Info("This phone can look but not change anything. Approving, sending, assigning and controlling agents stay disabled until the security review is done.")
+  }
+  Box(Modifier.weight(1f)){content()}
+ }
+}
 
 @Composable private fun Chips(options:List<String>,chosen:String,onChoose:(String)->Unit){
  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){

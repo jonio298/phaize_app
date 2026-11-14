@@ -37,5 +37,13 @@ class SecureConnectionStore(ctx:Context) {
   base to String(cipher.doFinal(ciphertext),Charsets.UTF_8)
  }catch(_:Exception){null} }
  fun loadLanPin():String?=prefs.getString("lanPin",null)?.takeIf{it.matches(Regex("[0-9a-f]{64}"))}
- fun clear(){prefs.edit().clear().apply()}
+ /** Stable installation identifier; never grants access by itself. Native pairing must bind it to a revocable credential. */
+ fun deviceId():String {
+  val existing=prefs.getString("device_id",null)
+  if(existing!=null && Regex("[a-f0-9-]{36}").matches(existing))return existing
+  val fresh=java.util.UUID.randomUUID().toString()
+  prefs.edit().putString("device_id",fresh).commit()
+  return fresh
+ }
+ fun clear(){prefs.edit().clear().commit()}
 }
