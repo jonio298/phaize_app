@@ -36,5 +36,13 @@ class SecureConnectionStore(ctx:Context) {
   val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,iv))
   base to String(cipher.doFinal(ciphertext),Charsets.UTF_8)
  }catch(_:Exception){null} }
- fun clear(){prefs.edit().clear().apply()}
+ /** Stable installation identifier; never grants access by itself. Native pairing must bind it to a revocable credential. */
+ fun deviceId():String {
+  val existing=prefs.getString("device_id",null)
+  if(existing!=null && Regex("[a-f0-9-]{36}").matches(existing))return existing
+  val fresh=java.util.UUID.randomUUID().toString()
+  prefs.edit().putString("device_id",fresh).commit()
+  return fresh
+ }
+ fun clear(){prefs.edit().clear().commit()}
 }
