@@ -24,12 +24,64 @@ class ApiClient {
   }finally{conn.disconnect()}
  }
  suspend fun snapshot(base:String,token:String)=parseSnapshot(call(base,token,"/v1/snapshot"))
+ suspend fun briefing(base:String,token:String):ProjectBriefing=parseProjectBriefing(call(base,token,"/v1/briefing"))
+ suspend fun builds(base:String,token:String):BuildFeed=parseBuildFeed(call(base,token,"/v1/builds"))
  suspend fun decide(base:String,token:String,a:Approval,approve:Boolean,deviceId:String):String {
   val p=JSONObject().put("decision",if(approve)"approve_once" else "deny").put("deviceId",deviceId).put("expectedRevision",a.revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/approvals/${a.id}/decisions","POST",p)
  }
+ suspend fun createTask(base:String,token:String,title:String,description:String,agentId:String?,priority:String,revision:Int,deviceId:String):String {
+  require(title.trim().length in 3..160 && description.length<=4000 && priority in listOf("low","normal","high"))
+  val p=JSONObject().put("title",title.trim()).put("description",description).put("agentId",agentId).put("priority",priority)
+   .put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/tasks","POST",p)
+ }
+ suspend fun browse(base:String,token:String,parentId:String?=null):BrowserPage {
+  val path="/v1/files/browse"+(if(parentId==null) "" else "?parent="+java.net.URLEncoder.encode(parentId,"UTF-8"))
+  return parseBrowserPage(call(base,token,path))
+ }
+ suspend fun errors(base:String,token:String,after:String?=null):ErrorPage {
+  val path="/v1/errors"+(if(after==null) "" else "?after="+java.net.URLEncoder.encode(after,"UTF-8"))
+  return parseErrorPage(call(base,token,path))
+ }
+ suspend fun chat(base:String,token:String,agentId:String):ChatPage =
+  parseChatPage(call(base,token,"/v1/agents/"+agentId+"/chat"))
+ suspend fun reviews(base:String,token:String):ReviewPage =
+  parseReviewPage(call(base,token,"/v1/reviews"))
+ suspend fun alerts(base:String,token:String):AlertPage =
+  parseAlertPage(call(base,token,"/v1/alerts"))
+ suspend fun sendChat(base:String,token:String,agentId:String,message:String,revision:Int,deviceId:String):String {
+  require(message.isNotBlank()&&message.length<=4000)
+  val p=JSONObject().put("message",message.trim()).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/agents/"+agentId+"/chat","POST",p)
+ }
+ suspend fun createGoal(base:String,token:String,goal:String,instructions:String,priority:String,revision:Int,deviceId:String):String {
+  require(goal.trim().length in 3..240&&instructions.length<=4000&&priority in listOf("low","normal","high"))
+  val p=JSONObject().put("goal",goal.trim()).put("instructions",instructions).put("priority",priority)
+   .put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/goals","POST",p)
+ }
+ suspend fun reviewDecision(base:String,token:String,reviewId:String,decision:String,revision:Int,deviceId:String):String {
+  require(decision in listOf("approve_review","request_changes"))
+  val p=JSONObject().put("decision",decision).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/reviews/"+reviewId+"/decision","POST",p)
+ }
+ suspend fun operations(base:String,token:String):OpsPage=parseOpsPage(call(base,token,"/v1/ops"))
+ suspend fun opsAction(base:String,token:String,action:String,params:JSONObject,revision:Int,deviceId:String):String {
+  require(action in listOf("lockdown","limits","terminal_preset","checkpoint_restore","capture"))
+  val p=JSONObject().put("action",action).put("deviceId",deviceId)
+   .put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  val keys=params.keys()
+  while(keys.hasNext()){val key=keys.next();require(key !in listOf("action","deviceId","expectedRevision","requestId"));p.put(key,params.get(key))}
+  return call(base,token,"/v1/ops/action","POST",p)
+ }
+ suspend fun permissions(base:String,token:String,a:Agent,read:String,write:String,delete:String,revision:Int,deviceId:String):String {
+  require(read in listOf("allow","ask","deny") && write in listOf("ask","deny") && delete in listOf("ask","deny"))
+  val p=JSONObject().put("read",read).put("write",write).put("delete",delete).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
+  return call(base,token,"/v1/agents/${a.id}/permissions","POST",p)
+ }
  suspend fun control(base:String,token:String,a:Agent,action:String,revision:Int,deviceId:String):String {
-  require(action in listOf("pause","resume","emergency_stop"))
+  require(action in listOf("start","pause","resume","emergency_stop"))
   val p=JSONObject().put("action",action).put("deviceId",deviceId).put("expectedRevision",revision).put("requestId",UUID.randomUUID().toString())
   return call(base,token,"/v1/agents/${a.id}/control","POST",p)
  }

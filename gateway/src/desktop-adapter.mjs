@@ -18,6 +18,21 @@ export function createDesktopAdapter({bridgeUrl,bridgeToken,fetchImpl=fetch}={})
   return {
     async snapshot(){try{const state=await invoke('/mobile/v1/snapshot');return {...state,mode:'live'};}catch{throw Error('Desktop not available; remote state cannot be trusted');}},
     async decide(request){try{return await invoke('/mobile/v1/approvals/decisions','POST',request);}catch{return FAIL;}},
-    async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}}
+    async control(request){try{return await invoke('/mobile/v1/agent-control','POST',request);}catch{return FAIL;}},
+    async permissions(request){try{return await invoke('/mobile/v1/agent-permissions','POST',request);}catch{return FAIL;}},
+    async createTask(request){try{return await invoke('/mobile/v1/tasks','POST',request);}catch{return FAIL;}},
+    async browse({parentId}){try{return await invoke('/mobile/v1/files/browse'+(parentId?'?parent='+encodeURIComponent(parentId):''));}catch{return FAIL;}},
+    async errors({after}){try{return await invoke('/mobile/v1/errors'+(after?'?after='+encodeURIComponent(after):''));}catch{return FAIL;}},
+    async chat({agentId,after}){try{return await invoke('/mobile/v1/agents/'+encodeURIComponent(agentId)+'/chat'+(after?'?after='+encodeURIComponent(after):''));}catch{return FAIL;}},
+    async reviews({after}){try{return await invoke('/mobile/v1/reviews'+(after?'?after='+encodeURIComponent(after):''));}catch{return FAIL;}},
+    async alerts({after}){try{return await invoke('/mobile/v1/alerts'+(after?'?after='+encodeURIComponent(after):''));}catch{return FAIL;}},
+    async sendChat(request){try{return await invoke('/mobile/v1/agent-chat','POST',request);}catch{return FAIL;}},
+    async createGoal(request){try{return await invoke('/mobile/v1/goals','POST',request);}catch{return FAIL;}},
+    async reviewDecision(request){try{return await invoke('/mobile/v1/reviews/decision','POST',request);}catch{return FAIL;}},
+    async briefing(){try{return await invoke('/mobile/v1/briefing');}catch{return FAIL;}},
+    async builds(){try{return await invoke('/mobile/v1/builds');}catch{return FAIL;}},
+    async ops(){try{return await invoke('/mobile/v1/ops');}catch{return FAIL;}},
+    async opsAction(request){try{return await invoke('/mobile/v1/ops/action','POST',request);}catch{return FAIL;}}
+
   };
 }
